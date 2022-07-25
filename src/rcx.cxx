@@ -1,3 +1,4 @@
+#include <boost/program_options/positional_options.hpp>
 #include <iostream>
 
 #include <boost/program_options.hpp>
@@ -27,12 +28,27 @@ auto main(
 
     desc.add_options()
       ("help,h", "Show this")
-      ("s", value<std::string>(), "Specify target source file to compile")
-      ("o", value<std::string>(), "Set executable name");
+      // (",s", value<std::string>()->value_name("input_file"), "Specify target source file to compile")
+      (",o", value<std::string>()->value_name("output_name"), "Set executable name")
+      ("source,s", value<std::string>()->value_name("input_file"), "source");
+
+    positional_options_description pos_desc;
+    pos_desc.add("source", -1);
+    
+    command_line_parser clp(argc, argv);
+
+    clp.options(desc).positional(pos_desc);
 
     variables_map vm;
-    store(parse_command_line(argc, argv, desc), vm);
+    store(clp.run(), vm);
     notify(vm);
+
+    if (vm.count("help") || vm.count("h") || vm.empty() || !vm.count("source")) {
+[[maybe_unused]] LABEL_HELP:
+      std::cerr << "Usage: rcx [-o output_file] [options...] source_file\n";
+      std::cerr << desc;
+      return 0;
+    }
 
     for(auto it = vm.begin(); it != vm.end(); ++it)
       optMap[it->first] = it->second;
