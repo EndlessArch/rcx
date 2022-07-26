@@ -1,6 +1,8 @@
 #ifndef RCX_CONV_MODERNIZER_HPP
 #define RCX_CONV_MODERNIZER_HPP
 
+#include <string>
+#include <vector>
 #define NSRCXBGN \
 namespace rcx {
 
@@ -19,6 +21,18 @@ namespace rcx {
 NSRCXBGN
 
 namespace {
+
+template <typename T, typename... Args>
+struct has : std::false_type {};
+
+template <typename T, typename... Args>
+struct has<T, std::variant<T, Args...>> : std::true_type {};
+
+template <typename T, typename U, typename... Args>
+struct has<T, std::variant<U, Args...>> : has<T, std::variant<Args...>> {};
+
+template <typename T, typename V>
+constexpr bool does_variant_have_v = has<T, V>::value;
 
 enum class EPackageStatus {
     Success,
@@ -87,14 +101,14 @@ struct Package {
 
     template <typename _T>
     static std::enable_if_t<std::disjunction_v<
-        std::is_same<_T, llvm::StringRef>,
+        std::is_constructible<_T, llvm::StringRef>,
+        std::is_convertible<_T, llvm::StringRef>,
         std::is_invocable_r<llvm::StringRef, _T>
-    >, struct Package>
+    >, Package<T>>
     makeBroken(_T && err) noexcept {
-        return Package(BrokenPackage{}.setErrPrtCB(std::forward<_T>(err)));
+        return Package<T>(BrokenPackage{}.setErrPrtCB(std::forward<_T>(err)));
     }
 
-    template <typename OS>
     T open() noexcept {
         return \
         std::visit([this](auto && arg) -> T {

@@ -56,7 +56,7 @@ auto main(
     spdlog::error(e.what());
   }
 
-  rcx::mainParser(std::move(optMap));
+  rcx::parseStart(std::move(optMap));
 
   return 0;
 }
