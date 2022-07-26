@@ -6,7 +6,7 @@
 
 #include <conv/Modernizer.hpp>
 
-#define ACTIVATE_CLASS(clsName) \
+#define CHK_CLS(clsName) \
 using __chK_t = std::enable_if_t<does_variant_have_v<clsName, context_t>>
 
 NSRCXBGN
@@ -14,8 +14,9 @@ namespace ctx {
 
 template<class> class Context;
 class ModuleContext;
+class FunctionContext;
 
-using context_t = typename std::variant<ModuleContext>;
+using context_t = typename std::variant<ModuleContext, FunctionContext>;
 
 template <typename T>
 class BaseContext {
@@ -26,10 +27,20 @@ public:
 
 class ModuleContext : public BaseContext<ModuleContext> {
 public:
-    ACTIVATE_CLASS(ModuleContext);
+    CHK_CLS(ModuleContext);
 
     ModuleContext() = delete;
     ~ModuleContext() = default;
+    
+};
+
+class FunctionContext : public BaseContext<FunctionContext> {
+public:
+    CHK_CLS(FunctionContext);
+
+    FunctionContext() = delete;
+    ~FunctionContext() = default;
+
     
 };
 

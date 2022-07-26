@@ -34,7 +34,7 @@ parseStart(llvm::StringMap<boost::program_options::variable_value> && optMap) no
         static std::string buf = "";
 
         if (buf.empty() && std::getline(sourceF, buf).eof())
-            return "\0";
+            return std::string({EOF});
             
         static auto spaceSplitter = [](std::string & rhs) noexcept -> std::string {
             if(auto a = rhs.find(' '); a != std::string::npos) {

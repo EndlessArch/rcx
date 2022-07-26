@@ -126,7 +126,7 @@ struct Package {
             spdlog::error(
             "Failed to open package; package has neither expected content nor error callback:"
             " replacing task by instantly default constructed");
-            return {};
+            return this->fb_();
         }, this->package_content_);
     }
 

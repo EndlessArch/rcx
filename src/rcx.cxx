@@ -1,3 +1,4 @@
+#include "1:Parse/CTX/Context.hpp"
 #include <boost/program_options/positional_options.hpp>
 #include <iostream>
 
@@ -56,7 +57,9 @@ auto main(
     spdlog::error(e.what());
   }
 
-  rcx::parseStart(std::move(optMap));
+  auto ctx = rcx::parseStart(std::move(optMap))();
+
+  std::get<rcx::ctx::ModuleContext>(ctx);
 
   return 0;
 }
