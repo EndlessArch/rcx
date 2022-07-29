@@ -1,9 +1,7 @@
 #include "parser.hpp"
 
-#include "1:Parse/CTX/Context.hpp"
-#include "conv/Modernizer.hpp"
-
 #include <fstream>
+#include <functional>
 #include <istream>
 #include <iterator>
 
@@ -11,9 +9,12 @@
 
 #include <boost/program_options/variables_map.hpp>
 
-#include <map>
+#include <llvm/ADT/StringRef.h>
+
 #include <spdlog/spdlog.h>
-#include <string>
+
+#include "1:Parse/CTX/Context.hpp"
+#include "conv/Modernizer.hpp"
 
 NSRCXBGN
 
@@ -25,7 +26,7 @@ parseStart(llvm::StringMap<boost::program_options::variable_value> && optMap) no
 
     std::fstream sourceF(sourceName, std::ios_base::in);
     if (!sourceF.is_open()) {
-        spdlog::error("Unable to open " + sourceName + " and read");
+        spdlog::error("Unable to open " + sourceName + ".");
         std::abort();
     }
 
@@ -52,10 +53,20 @@ parseStart(llvm::StringMap<boost::program_options::variable_value> && optMap) no
         return spaceSplitter(buf);
     };
 
+    using mod_ctx_t = Package<ctx::context_t>;
+
+    static auto throwNoneWith = [](llvm::StringRef str) -> mod_ctx_t {
+        return mod_ctx_t::makeBroken(
+        str,
+        []() noexcept -> ctx::context_t { 
+            return ctx::context_t(ctx::ModuleContext({}));
+        });
+    };
+
     auto word = parseStreamer();
 
     if(word.front() == EOF)
-        return Package<ctx::context_t>::makeBroken<llvm::StringRef>("Faced EOF");
+        return throwNoneWith("Faced EOF");
 
     Keyword ikw = parseKeyword(word)();
 
@@ -66,7 +77,7 @@ parseStart(llvm::StringMap<boost::program_options::variable_value> && optMap) no
         spdlog::error("Expected module only :P");
     }
 
-    return Package<ctx::context_t>::makeBroken<llvm::StringRef>("unreachable code");
+    return throwNoneWith("unreachable code");
 }
 
 Package<Keyword> parseKeyword(std::string & str) noexcept {
@@ -96,7 +107,6 @@ Package<Keyword> parseKeyword(std::string & str) noexcept {
 
 Package<ctx::context_t>
 parseModule(void) noexcept {
-
 }
 
 NSRCXEND

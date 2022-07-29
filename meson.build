@@ -17,9 +17,13 @@ llvm_dep = dependency(
 
 rcx_inc_dir = include_directories('src')
 
+sources = [
+  'src/rcx.cxx',
+  'src/1:Parse/parser.cxx'
+  ]
+
 executable('rcx',
-           'src/rcx.cxx',
-           'src/1:Parse/parser.cxx',
+           sources,
            install : true,
            include_directories : rcx_inc_dir,
            dependencies : [ spdlog_dep, llvm_dep, boost_dep ])

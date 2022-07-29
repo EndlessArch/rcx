@@ -1,8 +1,6 @@
 #ifndef RCX_CONV_MODERNIZER_HPP
 #define RCX_CONV_MODERNIZER_HPP
 
-#include <string>
-#include <vector>
 #define NSRCXBGN \
 namespace rcx {
 
@@ -10,8 +8,10 @@ namespace rcx {
 } // ns rcx
 
 #include <functional>
-#include <variant>
+#include <string>
 #include <type_traits>
+#include <variant>
+#include <vector>
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/Optional.h>
@@ -69,6 +69,8 @@ using BrokenPackage = struct __brkn_pkg {
     }
 };
 
+// xand
+
 template <bool, bool>
 struct xand : std::false_type {};
 
@@ -78,35 +80,67 @@ struct xand<true, true> : std::true_type {};
 template <>
 struct xand<false, false> : std::true_type {};
 
-} // ns anon
+template <typename T, typename U>
+inline constexpr bool xand_v = xand<T::value, U::value>::value;
+
+// is_variant 
+
+template <typename... Args>
+struct is_variant : std::false_type {};
+
+template <typename... Args>
+struct is_variant<std::variant<Args...>> : std::true_type {};
+
+template <typename... Args>
+inline constexpr bool is_variant_v = is_variant<Args...>::value;
+
+template <typename T, typename... Args>
+constexpr auto bind_constructor(Args&&... args) noexcept {
+    // IDK how to std::bind template constructor
+    return [&](Args&&...) -> T { return T(std::forward<Args>(args)...); };
+}
 
 template <typename T,
-    typename FallbackConstructor = std::function<T()>>
-struct Package {
-    using checker_t
-    = std::enable_if_t<
-        std::conjunction_v<
-            std::is_same<std::invoke_result_t<FallbackConstructor>, T>>,
-            xand<std::is_nothrow_constructible_v<T>, std::is_same_v<FallbackConstructor, std::function<T()>>>>;
+    typename FallbackConstructor>
+struct _Package {
+    using __fbc_r_t = typename std::invoke_result_t<FallbackConstructor>;
 
-    std::variant<BrokenPackage, T> package_content_;
+    static_assert(
+    std::disjunction_v<
+        std::is_convertible<__fbc_r_t, T>,
+        std::is_nothrow_constructible<__fbc_r_t, T>
+    >, "Fallback constructor's return type should be construct/convertible to type `T` of Package<>");
+
+    std::variant<T, BrokenPackage> package_content_;
 
     FallbackConstructor fb_;
 
-    template <typename _T>
-    Package(_T && rhs) : package_content_(std::forward<_T>(rhs)) {}
+    template <typename _T, typename... Args>
+    _Package(_T && val, Args&&... cargs)
+    : package_content_(std::forward<_T>(val)), fb_(bind_constructor<T>(cargs...)) {
+        static_assert(std::is_constructible_v<T, Args...>,
+        "Unable to build fallback constructor");
+    }
 
     template <typename _T, typename _FB>
-    Package(_T && rhs, _FB && fb) : package_content_(std::forward<_T>(rhs)), fb_(std::forward<_FB>(fb)) {}
+    _Package(_T && val, _FB && fb)
+    : package_content_(std::forward<_T>(val)), fb_(std::forward<_FB>(fb)) {}
 
-    template <typename _T>
-    static std::enable_if_t<std::disjunction_v<
-        std::is_constructible<_T, llvm::StringRef>,
-        std::is_convertible<_T, llvm::StringRef>,
-        std::is_invocable_r<llvm::StringRef, _T>
-    >, Package<T>>
-    makeBroken(_T && err) noexcept {
-        return Package<T>(BrokenPackage{}.setErrPrtCB(std::forward<_T>(err)));
+    template <typename _T, typename... Args>
+    static _Package<T, FallbackConstructor>
+    makeBroken(_T && err, Args&&... fbcArgs) noexcept {
+        static_assert(
+            std::disjunction_v<
+                std::is_constructible<_T, llvm::StringRef>,
+                std::is_convertible<_T, llvm::StringRef>,
+                std::is_invocable_r<llvm::StringRef, _T>
+            >,  "'_T && err' should either be construct/convertible to `llvm::StringRef`"
+                " or have `llvm::StringRef` as return type"
+        );
+
+        return _Package<T, FallbackConstructor>(
+            BrokenPackage{}.setErrPrtCB(std::forward<_T>(err)),
+            std::forward<Args>(fbcArgs)...);
     }
 
     T open() noexcept {
@@ -117,7 +151,8 @@ struct Package {
             
             if constexpr (std::is_same_v<decltype(arg), BrokenPackage>) {
                 if(llvm::StringRef errMsg = std::get<BrokenPackage>(arg)(); errMsg == "\xd")
-                    spdlog::error("Error while opening package; broken package returned error message for nothing");
+                    spdlog::error("Error while opening package"
+                    "; broken package returned error message for nothing");
                 else spdlog::warn(errMsg.str());
                 
                 return this->fb_();
@@ -132,6 +167,12 @@ struct Package {
 
     inline auto operator()(void) noexcept { return this->open(); }
 };
+
+} // ns anon
+
+// to avoid problem in case of Package<std::variant<?>>
+template <typename T, typename FBC = std::function<T()>>
+using Package = _Package<T, FBC>;
 
 NSRCXEND
 

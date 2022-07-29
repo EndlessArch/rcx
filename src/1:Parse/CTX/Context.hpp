@@ -1,6 +1,7 @@
 #ifndef RCX_1_CTX_CONTEXT_HPP
 #define RCX_1_CTX_CONTEXT_HPP
 
+#include <initializer_list>
 #include <utility>
 #include <variant>
 
@@ -21,17 +22,27 @@ using context_t = typename std::variant<ModuleContext, FunctionContext>;
 template <typename T>
 class BaseContext {
 public:
-    BaseContext() = delete;
+    // BaseContext() = delete;
     ~BaseContext() = default;
 };
 
 class ModuleContext : public BaseContext<ModuleContext> {
 public:
+    using defs_t = typename std::variant<ModuleContext, FunctionContext>;
+
+private:
+
+    std::vector<defs_t> ctx_;
+
+public:
+
     CHK_CLS(ModuleContext);
 
     ModuleContext() = delete;
     ~ModuleContext() = default;
-    
+
+    ModuleContext(std::initializer_list<defs_t> && il)
+    : ctx_(std::move(il)) {}
 };
 
 class FunctionContext : public BaseContext<FunctionContext> {
