@@ -1,0 +1,23 @@
+name: C/C++ CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Meson Build
+      uses: BSFishy/meson-build@v1.0.3
+      
+    - name: configure
+      run: meson setup --wipe buliddir
+      
+    - name: compile
+      run: meson compile -C builddir
