@@ -1,6 +1,7 @@
 #ifndef RCX_CONV_MODERNIZER_HPP
 #define RCX_CONV_MODERNIZER_HPP
 
+#include "1:Parse/CTX/Context.hpp"
 #define NSRCXBGN \
 namespace rcx {
 
@@ -100,6 +101,8 @@ constexpr auto bind_constructor(Args&&... args) noexcept {
     return [&](Args&&...) -> T { return T(std::forward<Args>(args)...); };
 }
 
+} // ns anon
+
 template <typename T,
     typename FallbackConstructor>
 struct _Package {
@@ -168,11 +171,8 @@ struct _Package {
     inline auto operator()(void) noexcept { return this->open(); }
 };
 
-} // ns anon
-
-// to avoid problem in case of Package<std::variant<?>>
 template <typename T, typename FBC = std::function<T()>>
-using Package = _Package<T, FBC>;
+using Package = struct _Package<T, FBC>;
 
 NSRCXEND
 
