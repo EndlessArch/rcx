@@ -1,4 +1,4 @@
-#include "1:Parse/CTX/Context.hpp"
+#include <src/parse/parser.hpp>
 
 #include <iostream>
 
@@ -14,7 +14,7 @@
 
 #include <spdlog/spdlog.h>
 
-#include <1:Parse/parser.hpp>
+#include <src/parse/parser.hpp>
 #include <conv/Modernizer.hpp>
 
 auto main(

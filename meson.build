@@ -19,7 +19,7 @@ rcx_inc_dir = include_directories('src')
 
 sources = [
   'src/rcx.cxx',
-  'src/1:Parse/parser.cxx'
+  'src/parse/parser.cxx'
   ]
 
 executable('rcx',

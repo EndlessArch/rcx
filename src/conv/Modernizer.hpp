@@ -1,12 +1,13 @@
 #ifndef RCX_CONV_MODERNIZER_HPP
 #define RCX_CONV_MODERNIZER_HPP
 
-#include "1:Parse/CTX/Context.hpp"
 #define NSRCXBGN \
 namespace rcx {
 
 #define NSRCXEND \
 } // ns rcx
+
+#include <src/parse/CTX/Context.hpp>
 
 #include <functional>
 #include <string>
