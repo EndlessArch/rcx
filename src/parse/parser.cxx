@@ -1,4 +1,5 @@
 #include "parser.hpp"
+#include <clang/Sema/Sema.h>
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContextAllocate.h"
 #include "clang/AST/Decl.h"
@@ -7,6 +8,8 @@
 #include "clang/AST/DeclGroup.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/FileEntry.h"
+#include "clang/Basic/SourceLocation.h"
+#include "clang/Frontend/CompilerInvocation.h"
 #include "clang/Sema/CodeCompleteConsumer.h"
 #include "llvm/Support/PrettyStackTrace.h"
 
@@ -16,12 +19,14 @@
 #include <iterator>
 
 // #include <ranges>
+#include <memory>
 #include <parse/CTX/Context.hpp>
 #include <conv/Modernizer.hpp>
 
 #include <boost/program_options/variables_map.hpp>
 
 #include <clang/Basic/CodeGenOptions.h>
+#include <clang/Basic/FileManager.h>
 #include <clang/Basic/LangOptions.h>
 #include <clang/Basic/LangStandard.h>
 #include <clang/Basic/SourceManager.h>
@@ -157,10 +162,7 @@ struct RCXCompiler {
         clang_.getLangOpts() = std::move(lo);
         clang_.getCodeGenOpts() = std::move(cgo);
 
-        std::shared_ptr<DiagnosticConsumer> pDc = std::make_shared<DiagnosticConsumer>();
-        pDc->BeginSourceFile(lo);
-
-        clang_.createDiagnostics(pDc.get());
+        clang_.createDiagnostics();
 
         auto triple = llvm::Triple::normalize(llvm::sys::getDefaultTargetTriple());
         llvm::Triple tr(triple);
@@ -175,11 +177,11 @@ struct RCXCompiler {
 
         const auto & tInf = clang_.getTarget();
         this->ptrSz_ = tInf.getPointerWidth(0) / 8;
-        
+
         clang_.createSourceManager(*clang_.createFileManager());
         clang_.createPreprocessor(clang::TranslationUnitKind::TU_Complete);
 
-        clang_.createASTContext();
+        // clang_.createASTContext();
 
         cg_.reset(
             clang::CreateLLVMCodeGen(
@@ -191,24 +193,36 @@ struct RCXCompiler {
                 this->ctx_));
     }
 
-    void Initialize(const std::string& filename, std::unique_ptr<ASTConsumer> ac) noexcept {
+    void Initialize(const std::string& filename, std::unique_ptr<ASTConsumer> ac = std::make_unique<ASTConsumer>()) noexcept {
+        
         clang_.setASTConsumer(std::move(ac));
 
         clang_.createSema(clang::TU_Complete, nullptr);
 
-        clang::SourceManager& sm = clang_.getSourceManager();
+        auto& sm = clang_.getSema().getSourceManager();
 
-        sm.setMainFileID(sm.createFileID(
-            std::move(llvm::MemoryBuffer::getFile(filename).get()),
-            clang::SrcMgr::C_User));
+        auto& fer = sm.getFileManager().getFile(filename, true).get();
+
+        sm.setMainFileID(
+            sm.createFileID(fer, SourceLocation(), SrcMgr::C_User));
         spdlog::info("RCXCompiler initialized");
+
+        // spdlog::info(sm.getBufferData(sm.getMainFileID()).data());
     }
 
-    auto compile(void) noexcept {
+    auto Compile(void) noexcept {
+
+        clang::CompilerInvocation ci;
 
         llvm::EnablePrettyStackTrace();
 
         spdlog::info((int)clang_.hasASTConsumer());
+
+        clang_.getSourceManager().PrintStats();
+
+        clang_.getSourceManager().getFileManager().PrintStats();
+
+        clang_.getSema().PrintStats();
 
         clang::ParseAST(clang_.getSema(), true, false);
         // mod_ = static_cast<clang::CodeGenerator&>(clang_.getASTConsumer()).GetModule();
@@ -226,11 +240,11 @@ parseStart(llvm::StringMap<boost::program_options::variable_value> && optMap) no
     std::string sourceName = optMap["source"].as<std::string>();
     std::string destName = optMap["-o"].empty() ? "" : optMap["-o"].as<std::string>();
 
-    std::fstream sourceF(sourceName, std::ios_base::in);
-    if (!sourceF.is_open()) {
-        spdlog::error("Unable to open " + sourceName + ".");
-        std::abort();
-    }
+    // std::fstream sourceF(sourceName, std::ios_base::in);
+    // if (!sourceF.is_open()) {
+    //     spdlog::error("Unable to open " + sourceName + ".");
+    //     std::abort();
+    // }
 
     RCXCompiler compiler;
 
@@ -238,7 +252,7 @@ parseStart(llvm::StringMap<boost::program_options::variable_value> && optMap) no
 
     compiler.Initialize(sourceName, std::make_unique<RCXAC>(compiler.cg_));
 
-    compiler.compile();
+    compiler.Compile();
 
     // clang::DiagnosticOptions clangOpts;
 
