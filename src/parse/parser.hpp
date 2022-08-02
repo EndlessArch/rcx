@@ -10,18 +10,14 @@
 
 NSRCXBGN
 
+namespace parser {
+
+
+
+} // ns parser
+
 Package<ctx::context_t>
 parseStart(llvm::StringMap<boost::program_options::variable_value> &&) noexcept;
-
-enum class Keyword {
-    Unexpected,
-    ExportModule,
-    ImportModule,
-    Defun,
-    DefVar
-};
-
-Package<Keyword> parseKeyword(std::string &) noexcept;
 
 Package<ctx::context_t> parseModule(void) noexcept;
 

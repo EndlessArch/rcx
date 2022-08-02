@@ -36,11 +36,6 @@ struct has<T, std::variant<U, Args...>> : has<T, std::variant<Args...>> {};
 template <typename T, typename V>
 constexpr bool does_variant_have_v = has<T, V>::value;
 
-enum class EPackageStatus {
-    Success,
-    Failed
-};
-
 using BrokenPackage = struct __brkn_pkg {
     using callback_t = typename std::function<llvm::StringRef(void)>;
 

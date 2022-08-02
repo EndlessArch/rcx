@@ -12,8 +12,13 @@ spdlog_dep = spdlog_sproj.dependency('spdlog')
 
 llvm_dep = dependency(
   'llvm',
-  version : '>= 12.0'
+  version : '>= 14.0'
   )
+
+clang_dep = dependency(
+  'clang',
+  static : true,
+  modules : [ 'clangBasic', 'clangFrontend', 'clangCodeGen' ])
 
 rcx_inc_dir = include_directories('src')
 
@@ -26,4 +31,4 @@ executable('rcx',
            sources,
            install : true,
            include_directories : rcx_inc_dir,
-           dependencies : [ spdlog_dep, llvm_dep, boost_dep ])
+           dependencies : [ spdlog_dep, llvm_dep, clang_dep, boost_dep ])
