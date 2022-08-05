@@ -1,5 +1,3 @@
-#include <src/parse/parser.hpp>
-
 #include <iostream>
 
 #include <boost/program_options.hpp>
@@ -14,7 +12,7 @@
 
 #include <spdlog/spdlog.h>
 
-#include <src/parse/parser.hpp>
+#include <parse/parser.hpp>
 #include <conv/Modernizer.hpp>
 
 auto main(
@@ -47,9 +45,9 @@ auto main(
 
         if (vm.count("help") || vm.count("h") || vm.empty() || !vm.count("source")) {
 [[maybe_unused]] LABEL_HELP:
-        std::cerr << "Usage: rcx [-o output_file] [options...] source_file\n";
-        std::cerr << desc;
-        return 0;
+            std::cerr << "Usage: rcx [-o output_file] [options...] source_file\n";
+            std::cerr << desc;
+            return 0;
         }
 
         for(auto it = vm.begin(); it != vm.end(); ++it)
