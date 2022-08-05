@@ -16,7 +16,7 @@ jobs:
     - uses: actions/setup-python@v1
     - name: Install Dependencies
       run: |
-        sudo apt-get -y install libboost-all-dev llvm-14 libclang-14-dev
+        sudo apt-get -y install libboost-all-dev llvm-14 # libclang-14-dev
         sudo ln -s /usr/bin/llvm-config-14 /usr/bin/llvm-config
     - name: Meson Build
       uses: BSFishy/meson-build@v1.0.3
