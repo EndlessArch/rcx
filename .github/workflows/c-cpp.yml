@@ -17,7 +17,7 @@ jobs:
     - name: Install Dependencies
       run: |
         sudo apt-get -y install libboost-all-dev
-        sudo apt-get -y install llvm-14
+        sudo apt-get -y install llvm-14-dev
         sudo apt-get -y install libclang-14-dev
     - name: Meson Build
       uses: BSFishy/meson-build@v1.0.3
