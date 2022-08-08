@@ -2,6 +2,8 @@ project('rcx', 'cpp',
   version : '0.1',
   default_options : ['warning_level=3', 'cpp_std=c++17'])
 
+add_global_arguments('-Wunused-parameter', language : [ 'c', 'cpp' ])
+
 boost_dep = dependency('boost', modules : [ 'program_options' ])
 
 cmake = import('cmake')
@@ -12,7 +14,8 @@ spdlog_dep = spdlog_sproj.dependency('spdlog')
 
 llvm_dep = dependency(
   'llvm',
-  version : '>= 14.0'
+  version : '>= 13.0'
+  # modules : [ 'core', 'native', 'bitwriter' ]
   )
 
 clang_dep = dependency(

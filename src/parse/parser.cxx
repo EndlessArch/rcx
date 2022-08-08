@@ -1,5 +1,11 @@
 #include "parser.hpp"
+
+#include <clang/CodeGen/CodeGenAction.h>
+#include <clang/Lex/PreprocessorOptions.h>
+#include <clang/AST/ASTDumper.h>
+#include <clang/Parse/Parser.h>
 #include <clang/Sema/Sema.h>
+#include "clang-c/Index.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContextAllocate.h"
 #include "clang/AST/Decl.h"
@@ -7,14 +13,27 @@
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclGroup.h"
 #include "clang/Basic/Diagnostic.h"
+#include "clang/Basic/DiagnosticIDs.h"
+#include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Basic/FileEntry.h"
+#include "clang/Basic/FileSystemOptions.h"
 #include "clang/Basic/SourceLocation.h"
+#include "clang/Basic/TokenKinds.h"
 #include "clang/Frontend/CompilerInvocation.h"
+#include "clang/Frontend/FrontendAction.h"
+#include "clang/Frontend/FrontendActions.h"
+#include "clang/Frontend/FrontendOptions.h"
 #include "clang/Sema/CodeCompleteConsumer.h"
+#include "clang/Serialization/PCHContainerOperations.h"
+#include "llvm/ADT/IntrusiveRefCntPtr.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/PrettyStackTrace.h"
+#include "llvm/Support/VirtualFileSystem.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <fstream>
 #include <functional>
+#include <iostream>
 #include <istream>
 #include <iterator>
 
@@ -34,11 +53,15 @@
 #include <clang/Basic/TargetOptions.h>
 #include <clang/CodeGen/ModuleBuilder.h>
 #include <clang/Frontend/CompilerInstance.h>
+#include <clang/FrontendTool/Utils.h>
+#include <clang/Frontend/TextDiagnosticPrinter.h>
+#include <clang/Frontend/TextDiagnosticBuffer.h>
 #include <clang/Parse/ParseAST.h>
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/Triple.h>
 #include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
 #include <llvm/Support/Host.h>
 #include <llvm/Support/MemoryBuffer.h>
 
@@ -47,192 +70,7 @@
 
 NSRCXBGN
 
-namespace {
-
 using namespace clang;
-
-struct RCXAC : public ASTConsumer{
-    std::unique_ptr<CodeGenerator> builder_;
-    std::vector<Decl *> topLvlDecls_;
-
-    RCXAC(std::shared_ptr<CodeGenerator> builderIn)
-    : ASTConsumer(), builder_(builderIn.get()) {}
-    ~RCXAC(void) = default;
-
-    void Initialize(ASTContext&) override;
-    bool HandleTopLevelDecl(DeclGroupRef) override;
-    void HandleInlineFunctionDefinition(FunctionDecl*) override;
-    void HandleInterestingDecl(DeclGroupRef) override;
-    void HandleTranslationUnit(ASTContext&) override;
-    void HandleTagDeclDefinition(TagDecl*) override;
-    void HandleTagDeclRequiredDefinition(const TagDecl*) override;
-    void HandleCXXImplicitFunctionInstantiation(FunctionDecl*) override;
-    void HandleImplicitImportDecl(ImportDecl*) override;
-    void CompleteTentativeDefinition(VarDecl*) override;
-    void CompleteExternalDeclaration(VarDecl*) override;
-    void AssignInheritanceModel(CXXRecordDecl*) override;
-    void HandleCXXStaticMemberVarInstantiation(VarDecl*) override;
-    void HandleVTable(CXXRecordDecl*) override;
-    ASTMutationListener* GetASTMutationListener(void) override;
-    ASTDeserializationListener* GetASTDeserializationListener(void) override;
-    void PrintStats(void) override;
-};
-
-void RCXAC::Initialize(ASTContext& ctx) {
-    builder_->Initialize(ctx);
-}
-
-bool RCXAC::HandleTopLevelDecl(DeclGroupRef declGroup) {
-    for(auto it = declGroup.begin(); it != declGroup.end(); ++it) {
-        topLvlDecls_.push_back(*it);
-    }
-    return builder_->HandleTopLevelDecl(declGroup);
-}
-
-void RCXAC::HandleInlineFunctionDefinition(FunctionDecl * fDecl) {
-    builder_->HandleInlineFunctionDefinition(fDecl);
-}
-
-void RCXAC::HandleInterestingDecl(DeclGroupRef declGroup) {
-    builder_->HandleInterestingDecl(declGroup);
-}
-
-void RCXAC::HandleTranslationUnit(ASTContext & ctx) {
-    builder_->HandleTranslationUnit(ctx);
-}
-
-void RCXAC::HandleTagDeclDefinition(TagDecl * td) {
-    builder_->HandleTagDeclDefinition(td);
-}
-
-void RCXAC::HandleTagDeclRequiredDefinition(const TagDecl * td) {
-    builder_->HandleTagDeclRequiredDefinition(td);
-}
-
-void RCXAC::HandleCXXImplicitFunctionInstantiation(FunctionDecl * fDecl) {
-    builder_->HandleCXXImplicitFunctionInstantiation(fDecl);
-}
-
-void RCXAC::HandleImplicitImportDecl(ImportDecl * iDecl) {
-    builder_->HandleImplicitImportDecl(iDecl);
-}
-
-void RCXAC::CompleteTentativeDefinition(VarDecl * vDecl) {
-    builder_->CompleteTentativeDefinition(vDecl);
-}
-
-void RCXAC::CompleteExternalDeclaration(VarDecl * vDecl) {
-    builder_->CompleteExternalDeclaration(vDecl);
-}
-
-void RCXAC::AssignInheritanceModel(CXXRecordDecl * rDecl) {
-    builder_->AssignInheritanceModel(rDecl);
-}
-
-void RCXAC::HandleCXXStaticMemberVarInstantiation(VarDecl * vDecl) {
-    builder_->HandleCXXStaticMemberVarInstantiation(vDecl);
-}
-
-void RCXAC::HandleVTable(CXXRecordDecl * rDecl) {
-    builder_->HandleVTable(rDecl);
-}
-
-ASTMutationListener * RCXAC::GetASTMutationListener(void) {
-    return builder_->GetASTMutationListener();
-}
-
-ASTDeserializationListener * RCXAC::GetASTDeserializationListener(void) {
-    return builder_->GetASTDeserializationListener();
-}
-
-void RCXAC::PrintStats(void) {
-    return builder_->PrintStats();
-}
-
-struct RCXCompiler {
-    llvm::LLVMContext ctx_;
-    clang::CompilerInstance clang_;
-    std::shared_ptr<clang::CodeGenerator> cg_;
-    llvm::Module * mod_ = nullptr;
-    unsigned ptrSz_ = 0;
-
-    RCXCompiler(clang::CodeGenOptions cgo = clang::CodeGenOptions()) {
-        clang::LangOptions lo;
-        lo.CPlusPlus = lo.CPlusPlus17 = 1;
-        clang_.getLangOpts() = std::move(lo);
-        clang_.getCodeGenOpts() = std::move(cgo);
-
-        clang_.createDiagnostics();
-
-        auto triple = llvm::Triple::normalize(llvm::sys::getDefaultTargetTriple());
-        llvm::Triple tr(triple);
-        tr.setOS(llvm::Triple::MacOSX);
-        tr.setVendor(llvm::Triple::VendorType::Apple);
-        tr.setEnvironment(llvm::Triple::EnvironmentType::MacABI);
-        clang_.getTargetOpts().Triple = tr.getTriple();
-        clang_.setTarget(clang::TargetInfo::CreateTargetInfo(
-            clang_.getDiagnostics(),
-            std::make_shared<clang::TargetOptions>(clang_.getTargetOpts())
-        ));
-
-        const auto & tInf = clang_.getTarget();
-        this->ptrSz_ = tInf.getPointerWidth(0) / 8;
-
-        clang_.createSourceManager(*clang_.createFileManager());
-        clang_.createPreprocessor(clang::TranslationUnitKind::TU_Complete);
-
-        // clang_.createASTContext();
-
-        cg_.reset(
-            clang::CreateLLVMCodeGen(
-                clang_.getDiagnostics(),
-                "rcx-main",
-                clang_.getHeaderSearchOpts(),
-                clang_.getPreprocessorOpts(),
-                clang_.getCodeGenOpts(),
-                this->ctx_));
-    }
-
-    void Initialize(const std::string& filename, std::unique_ptr<ASTConsumer> ac = std::make_unique<ASTConsumer>()) noexcept {
-        
-        clang_.setASTConsumer(std::move(ac));
-
-        clang_.createSema(clang::TU_Complete, nullptr);
-
-        auto& sm = clang_.getSema().getSourceManager();
-
-        auto& fer = sm.getFileManager().getFile(filename, true).get();
-
-        sm.setMainFileID(
-            sm.createFileID(fer, SourceLocation(), SrcMgr::C_User));
-        spdlog::info("RCXCompiler initialized");
-
-        // spdlog::info(sm.getBufferData(sm.getMainFileID()).data());
-    }
-
-    auto Compile(void) noexcept {
-
-        clang::CompilerInvocation ci;
-
-        llvm::EnablePrettyStackTrace();
-
-        spdlog::info((int)clang_.hasASTConsumer());
-
-        clang_.getSourceManager().PrintStats();
-
-        clang_.getSourceManager().getFileManager().PrintStats();
-
-        clang_.getSema().PrintStats();
-
-        clang::ParseAST(clang_.getSema(), true, false);
-        // mod_ = static_cast<clang::CodeGenerator&>(clang_.getASTConsumer()).GetModule();
-
-        // auto funcBGN = mod_
-        return mod_;
-    }
-};
-
-} // ns anon
 
 Package<ctx::context_t>
 parseStart(llvm::StringMap<boost::program_options::variable_value> && optMap) noexcept {
@@ -240,125 +78,73 @@ parseStart(llvm::StringMap<boost::program_options::variable_value> && optMap) no
     std::string sourceName = optMap["source"].as<std::string>();
     std::string destName = optMap["-o"].empty() ? "" : optMap["-o"].as<std::string>();
 
-    // std::fstream sourceF(sourceName, std::ios_base::in);
-    // if (!sourceF.is_open()) {
-    //     spdlog::error("Unable to open " + sourceName + ".");
-    //     std::abort();
-    // }
+    DiagnosticsEngine diag(
+        llvm::IntrusiveRefCntPtr<DiagnosticIDs>(),
+        &*llvm::IntrusiveRefCntPtr<DiagnosticOptions>());
 
-    RCXCompiler compiler;
+    auto invc = std::make_shared<CompilerInvocation>();
+    CompilerInvocation::CreateFromArgs(*invc, {}, diag);
 
-    compiler.clang_.getDiagnostics().dump();
+    invc->getDiagnosticOpts().ShowColors = 1;
 
-    compiler.Initialize(sourceName, std::make_unique<RCXAC>(compiler.cg_));
+    auto & fe = invc->getFrontendOpts();
+    auto f = FrontendInputFile(sourceName, Language::CXX);
 
-    compiler.Compile();
+    invc->getHeaderSearchOpts().AddPath(
+#ifdef __APPLE__
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
+#endif
+        "/usr/include/c++/v1",
+        frontend::IncludeDirGroup::System, false, false);
 
-    // clang::DiagnosticOptions clangOpts;
+    invc->getHeaderSearchOpts().AddPath(
+#ifdef __APPLE__
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
+#endif
+        "/usr/include",
+        frontend::IncludeDirGroup::System, false, true);
 
-    // std::unique_ptr<clang::TextDiagnosticPrinter> pClangDiagPrinter
-    //  = std::make_unique<clang::TextDiagnosticPrinter>(llvm::errs(), &clangOpts, true);
+    fe.ProgramAction = frontend::ASTDeclList;
+    fe.Inputs.clear(); // remove '-', stdin
+    fe.Inputs.push_back(f);
 
-    // llvm::IntrusiveRefCntPtr<clang::DiagnosticIDs> pClangDiagIDs;
+    // for(auto x : fe.Inputs)
+    //     spdlog::info("File : {}", x.getFile());
 
-    // std::unique_ptr<clang::DiagnosticsEngine> pClangDiag
-    //  = std::make_unique<clang::DiagnosticsEngine>(pClangDiagIDs, &clangOpts, pClangDiagPrinter.get());
+    CompilerInstance clang;
 
-    // clang::LangOptions langOpts;
-    // langOpts.LangStd = clang::LangStandard::lang_cxx17;
-    // langOpts.setClangABICompat(clang::LangOptions::ClangABI::Latest);
-    // langOpts.setGC(clang::LangOptions::GCMode::NonGC);
+    clang.setInvocation(std::move(invc));
+    clang.createDiagnostics();
 
-    // clang::FileSystemOptions fsOpts;
-    // clang::FileManager fMngr(fsOpts);
-    // spdlog::info("Got file: {}", fMngr.getFile(sourceName).get()->getName());
-    // clang::SourceManager sourceManager(*pClangDiag, fMngr);
+    llvm::vfs::OverlayFileSystem ofs(llvm::vfs::getRealFileSystem());
+    ofs.openFileForRead(sourceName);
 
-    // std::shared_ptr<clang::HeaderSearchOptions>
-    //     clangHeaderSearchOpts(new clang::HeaderSearchOptions());
-    // clangHeaderSearchOpts->AddPath(
-    //     "/usr/local/include",
-    //     clang::frontend::Angled,
-    //     false, false);
-    // clangHeaderSearchOpts->AddPath(
-    //     "/usr/local/include/c++/11",
-    //     clang::frontend::CXXSystem,
-    //     false, false);
+    auto fm = llvm::makeIntrusiveRefCnt<FileManager>(FileSystemOptions(),
+        llvm::makeIntrusiveRefCnt<llvm::vfs::OverlayFileSystem>(ofs));
+    clang.createSourceManager(*fm);
+    clang.setFileManager(fm.get());
 
-    // std::shared_ptr<clang::TargetOptions> tOpts
-    //  = std::make_shared<clang::TargetOptions>();
-    // tOpts->CPU = llvm::sys::getHostCPUName();
-    // tOpts->HostTriple = tOpts->Triple = llvm::sys::getDefaultTargetTriple();
+    auto & sm = clang.getSourceManager();
 
-    // std::shared_ptr<clang::TargetInfo> tInf(clang::TargetInfo::CreateTargetInfo(*pClangDiag, tOpts));
+    spdlog::info("code:\n{}", fm->getVirtualFileSystem().getBufferForFile(sourceName).get()->getBuffer().data());
 
-    // clang::HeaderSearch clangHeaderSearch(
-    //     clangHeaderSearchOpts,
-    //     sourceManager,
-    //     *pClangDiag,
-    //     langOpts, tInf.get());
+    sm.setMainFileID(sm.createFileID(
+        fm->getVirtualFileSystem().getBufferForFile(sourceName).get()->getMemBufferRef()));
 
-    // std::unique_ptr<clang::TrivialModuleLoader> clangML
-    //  = std::make_unique<clang::TrivialModuleLoader>();
+    // clang.getSourceManager().dump();
 
-    // // clang::CompilerInstance clang;
+    // clang.createSema(TranslationUnitKind::TU_Complete, nullptr);
+    // clang::ParseAST(clang.getSema());
 
-    // std::shared_ptr<clang::PreprocessorOptions> pClangPrepropOpts(new clang::PreprocessorOptions());
-    // clang::Preprocessor preprop(
-    //     pClangPrepropOpts,
-    //     *pClangDiag,
-    //     langOpts,
-    //     sourceManager,
-    //     clangHeaderSearch,
-    //     *clangML);
-    // preprop.Initialize(*tInf);
-    // spdlog::info("Preprocessor initialized");
+    GeneratePCHAction act;
+    clang.ExecuteAction(act);
 
-    // clang::RawPCHContainerReader pchReader;
-
-    // clang::FrontendOptions frontendOpts;
-    // clang::InitializePreprocessor(
-    //     preprop,
-    //     *pClangPrepropOpts,
-    //     pchReader,
-    //     frontendOpts);
-
-    // clang::ApplyHeaderSearchOptions(clangHeaderSearch, *clangHeaderSearchOpts, langOpts, llvm::Triple(tOpts->Triple));
-
-    // clang::IdentifierTable idTab;
-    // clang::SelectorTable selTab;
-    // clang::Builtin::Context biCtx;
-    // biCtx.initializeBuiltins(idTab, langOpts);
-    // biCtx.InitializeTarget(*tInf, nullptr);
-    // spdlog::info("clang biCtx initialized");
-
-    // clang::ASTContext ctx(
-    //     langOpts, sourceManager, idTab, selTab, biCtx,
-    //     clang::TranslationUnitKind::TU_Complete);
-    // ctx.getTargetInfo().getTargetOpts();
-
-    // clang::ASTConsumer consumer;
-    // consumer.Initialize(ctx);
-
-    // clang::Sema sema(preprop, ctx, consumer);
-    // sema.Initialize();
-    // spdlog::info("clang Sema initialized");
-
-    // clang::Parser parser(preprop, sema, true);
-    // // make sure target info isn't null
-    // parser.Initialize();
-    // spdlog::info("clang Parser initialized");
-
-    // spdlog::info("Parse Top Level Declaration: {}", parser.ParseTopLevelDecl()?"Success":"Failed");
-
-    // spdlog::info("clang::Parser initialized");
-
-    // sema.getASTContext().PrintStats();
-
-    // sema.getASTConsumer().PrintStats();
+    // auto mod = compiler.Compile();
+    // spdlog::info("Got module (null ? {})", (mod == nullptr));
+    // mod->print(llvm::errs(), nullptr);
 
     return Package<ctx::context_t>::makeBroken("Failed",
-    []() noexcept { return ctx::ModuleContext({}); });
+        []() noexcept { return ctx::ModuleContext({}); });
 }
 
 Package<ctx::context_t>
