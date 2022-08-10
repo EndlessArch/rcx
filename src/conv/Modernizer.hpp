@@ -1,6 +1,7 @@
 #ifndef RCX_CONV_MODERNIZER_HPP
 #define RCX_CONV_MODERNIZER_HPP
 
+#include <condition_variable>
 #define NSRCXBGN \
 namespace rcx {
 
@@ -41,9 +42,18 @@ using BrokenPackage = struct __brkn_pkg {
 
     std::variant<llvm::StringRef, callback_t> cont_;
 
+    template <typename T, typename = std::enable_if_t<std::is_convertible_v<T, llvm::StringRef>>>
     struct __brkn_pkg
-    setErrPrtCB(llvm::StringRef sr) noexcept {
-        this->cont_ = sr;
+    setErrPrtCB(T && sr) noexcept {
+        using t_t = decltype(sr);
+        using sr_t = typename std::conditional_t<
+            std::is_reference_v<t_t>,
+            std::conditional_t<
+                std::is_lvalue_reference_v<t_t>,
+                t_t&,
+                t_t&&>, t_t>;
+
+        this->cont_ = static_cast<sr_t>(std::forward<T>(sr));
         return *this;
     }
 
@@ -55,12 +65,14 @@ using BrokenPackage = struct __brkn_pkg {
 
     llvm::StringRef operator()(void) noexcept {
         return std::visit([](auto && rhs) -> llvm::StringRef {
-            if constexpr (std::is_same_v<decltype(rhs), callback_t>)
-                return std::get<callback_t>(rhs)();
-            
-            if constexpr (std::is_same_v<decltype(rhs), llvm::StringRef>)
-                return std::get<llvm::StringRef>(rhs);
-            
+            using arg_t = typename std::remove_reference_t<decltype(rhs)>;
+
+            if constexpr (std::is_same_v<arg_t, callback_t>)
+                return static_cast<callback_t>(rhs)();
+
+            if constexpr (std::is_same_v<arg_t, llvm::StringRef>)
+                return static_cast<llvm::StringRef>(rhs);
+
             return "\xd";
         }, cont_);
     }
@@ -80,7 +92,7 @@ struct xand<false, false> : std::true_type {};
 template <typename T, typename U>
 inline constexpr bool xand_v = xand<T::value, U::value>::value;
 
-// is_variant 
+// is_variant
 
 template <typename... Args>
 struct is_variant : std::false_type {};
@@ -145,15 +157,17 @@ struct _Package {
     T open() noexcept {
         return \
         std::visit([this](auto && arg) -> T {
-            if constexpr (std::is_same_v<decltype(arg), T>)
-                return std::get<T>(arg);
-            
-            if constexpr (std::is_same_v<decltype(arg), BrokenPackage>) {
-                if(llvm::StringRef errMsg = std::get<BrokenPackage>(arg)(); errMsg == "\xd")
+            using arg_t = typename std::remove_reference_t<decltype(arg)>;
+
+            if constexpr (std::is_same_v<arg_t, T>)
+                return static_cast<T>(arg);
+
+            if constexpr (std::is_same_v<arg_t, BrokenPackage>) {
+                if(llvm::StringRef errMsg = static_cast<BrokenPackage>(arg)(); errMsg == "\xd")
                     spdlog::error("Error while opening package"
                     "; broken package returned error message for nothing.");
                 else spdlog::warn(errMsg.str());
-                
+
                 return this->fb_();
             }
 
