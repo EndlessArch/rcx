@@ -1,8 +1,16 @@
 project('rcx', 'cpp',
   version : '0.1',
-  default_options : ['warning_level=3', 'cpp_std=c++17'])
+  default_options : [
+    'warning_level=3',
+    'cpp_std=c++17',
+    'cpp_eh=none',
+    'cpp_rtti=false'
+    ])
 
-add_global_arguments('-Wunused-parameter', language : [ 'c', 'cpp' ])
+add_global_arguments(
+  [ '-Wno-unused-parameter'
+  # , '-Wno-return-type'
+  ], language : [ 'c', 'cpp' ])
 
 boost_dep = dependency('boost', modules : [ 'program_options' ])
 
