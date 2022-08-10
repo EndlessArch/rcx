@@ -108,7 +108,7 @@ struct _Package {
     std::disjunction_v<
         std::is_convertible<__fbc_r_t, T>,
         std::is_nothrow_constructible<__fbc_r_t, T>
-    >, "Fallback constructor's return type should be construct/convertible to type `T` of Package<>");
+    >, "Fallback constructor's return type should be construct/convertible to type `T` of Package<>.");
 
     std::variant<T, BrokenPackage> package_content_;
 
@@ -118,7 +118,7 @@ struct _Package {
     _Package(_T && val, Args&&... cargs)
     : package_content_(std::forward<_T>(val)), fb_(bind_constructor<T>(cargs...)) {
         static_assert(std::is_constructible_v<T, Args...>,
-        "Unable to build fallback constructor");
+        "Unable to build fallback constructor.");
     }
 
     template <typename _T, typename _FB>
@@ -134,7 +134,7 @@ struct _Package {
                 std::is_convertible<_T, llvm::StringRef>,
                 std::is_invocable_r<llvm::StringRef, _T>
             >,  "'_T && err' should either be construct/convertible to `llvm::StringRef`"
-                " or have `llvm::StringRef` as return type"
+                " or have `llvm::StringRef` as return type."
         );
 
         return _Package<T, FallbackConstructor>(
@@ -151,7 +151,7 @@ struct _Package {
             if constexpr (std::is_same_v<decltype(arg), BrokenPackage>) {
                 if(llvm::StringRef errMsg = std::get<BrokenPackage>(arg)(); errMsg == "\xd")
                     spdlog::error("Error while opening package"
-                    "; broken package returned error message for nothing");
+                    "; broken package returned error message for nothing.");
                 else spdlog::warn(errMsg.str());
                 
                 return this->fb_();
@@ -159,7 +159,7 @@ struct _Package {
 
             spdlog::error(
             "Failed to open package; package has neither expected content nor error callback:"
-            " replacing task by instantly default constructed");
+            " replacing task by instantly default constructed.");
             return this->fb_();
         }, this->package_content_);
     }
