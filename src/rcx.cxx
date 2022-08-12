@@ -15,7 +15,7 @@
 #include <parse/parser.hpp>
 #include <conv/Modernizer.hpp>
 
-auto main(
+auto rcx_main(
     [[maybe_unused]] int argc,
     [[maybe_unused]] char * argv[]) -> int {
     ;
