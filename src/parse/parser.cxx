@@ -19,11 +19,15 @@
 #include "clang/Basic/FileSystemOptions.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/TokenKinds.h"
+#include "clang/Frontend/CommandLineSourceLoc.h"
 #include "clang/Frontend/CompilerInvocation.h"
 #include "clang/Frontend/FrontendAction.h"
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Frontend/FrontendOptions.h"
+#include "clang/Lex/HeaderSearchOptions.h"
+#include "clang/Lex/ModuleLoader.h"
 #include "clang/Sema/CodeCompleteConsumer.h"
+#include "clang/Sema/DeclSpec.h"
 #include "clang/Serialization/PCHContainerOperations.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/SmallVector.h"
@@ -83,38 +87,66 @@ parseStart(llvm::StringMap<boost::program_options::variable_value> && optMap) no
         &*llvm::IntrusiveRefCntPtr<DiagnosticOptions>());
 
     auto invc = std::make_shared<CompilerInvocation>();
-    CompilerInvocation::CreateFromArgs(*invc, {}, diag);
+    CompilerInvocation::CreateFromArgs(*invc, {
+        // "-isysroot",
+        // "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk",
+        "-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1",
+        "-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include",
+    }, diag);
 
     invc->getDiagnosticOpts().ShowColors = 1;
 
     auto & fe = invc->getFrontendOpts();
     auto f = FrontendInputFile(sourceName, Language::CXX);
 
-    invc->getHeaderSearchOpts().AddPath(
-#ifdef __APPLE__
-        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
-#endif
-        "/usr/include/c++/v1",
-        frontend::IncludeDirGroup::System, false, false);
+    // is this required ?
+    invc->PreprocessorOpts = std::make_shared<PreprocessorOptions>();
 
-    invc->getHeaderSearchOpts().AddPath(
-#ifdef __APPLE__
-        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
-#endif
-        "/usr/include",
-        frontend::IncludeDirGroup::System, false, true);
+    invc->getHeaderSearchOpts().UseLibcxx = 1;
+    invc->getHeaderSearchOpts().UseStandardSystemIncludes = 1;
+
+    invc->getLangOpts()->IncludeDefaultHeader = 1;
+
+    // invc->getHeaderSearchOpts().AddPath(
+    //     "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+    //     frontend::IncludeDirGroup::System, false, true);
+
+//     invc->getHeaderSearchOpts().AddPath(
+// #ifdef __APPLE__
+//         "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
+// #endif
+//         "/usr/include/c++/v1",
+//         frontend::IncludeDirGroup::System, false, false);
+
+//     invc->getHeaderSearchOpts().AddPath(
+// #ifdef __APPLE__
+//         "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
+// #endif
+//         "/usr/include",
+//         frontend::IncludeDirGroup::System, false, false);
+
+// #ifdef __APPLE__
+//     invc->getHeaderSearchOpts().AddPath(
+//     "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+//     frontend::IncludeDirGroup::IndexHeaderMap, true, false);
+// #endif
+
+    invc->getHeaderSearchOpts().UseStandardSystemIncludes = 1;
+    invc->getHeaderSearchOpts().UseStandardCXXIncludes = 1;
+    invc->getHeaderSearchOpts().UseBuiltinIncludes = 1;
+    // invc->getHeaderSearchOpts().Sysroot = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/";
+    // invc->getHeaderSearchOpts().ResourceDir = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/";
 
     fe.ProgramAction = frontend::ASTDeclList;
     fe.Inputs.clear(); // remove '-', stdin
     fe.Inputs.push_back(f);
 
-    // for(auto x : fe.Inputs)
-    //     spdlog::info("File : {}", x.getFile());
-
     CompilerInstance clang;
 
     clang.setInvocation(std::move(invc));
     clang.createDiagnostics();
+
+    clang.createTarget();
 
     llvm::vfs::OverlayFileSystem ofs(llvm::vfs::getRealFileSystem());
     ofs.openFileForRead(sourceName);
@@ -124,26 +156,37 @@ parseStart(llvm::StringMap<boost::program_options::variable_value> && optMap) no
     clang.createSourceManager(*fm);
     clang.setFileManager(fm.get());
 
-    auto & sm = clang.getSourceManager();
+    spdlog::info("code:\n{}", fm->getVirtualFileSystem().getBufferForFile(std::move(sourceName)).get()->getBuffer().data());
 
-    spdlog::info("code:\n{}", fm->getVirtualFileSystem().getBufferForFile(sourceName).get()->getBuffer().data());
+    // auto & sm = clang.getSourceManager();
+    // sm.setMainFileID(sm.createFileID(
+    //     fm->getVirtualFileSystem().getBufferForFile(sourceName).get()->getMemBufferRef()));
 
-    sm.setMainFileID(sm.createFileID(
-        fm->getVirtualFileSystem().getBufferForFile(sourceName).get()->getMemBufferRef()));
+    clang.createPreprocessor(TranslationUnitKind::TU_Complete);
 
-    // clang.getSourceManager().dump();
+    // clang.createASTReader();
+    // clang.getFrontendOpts().CodeCompletionAt.FileName = sourceName;
 
-    // clang.createSema(TranslationUnitKind::TU_Complete, nullptr);
+    // clang.createCodeCompletionConsumer();
+    CodeCompleteConsumer * ccc = nullptr;
+    if(clang.hasCodeCompletionConsumer())
+        ccc = &clang.getCodeCompletionConsumer();
+    // clang.createSema(TranslationUnitKind::TU_Complete, ccc);
+
     // clang::ParseAST(clang.getSema());
 
+    // ASTDumper dumper(llvm::errs(), true);
+    // dumper.dumpLookups(clang.getSema().getFunctionLevelDeclContext(), true);
+
     GeneratePCHAction act;
+    // PrintPreambleAction act;
+    // ExtractAPIAction act;
     clang.ExecuteAction(act);
 
-    // auto mod = compiler.Compile();
-    // spdlog::info("Got module (null ? {})", (mod == nullptr));
-    // mod->print(llvm::errs(), nullptr);
+    // auto & ctx = clang.getASTContext();
+    // DeclaratorChunk::FunctionTypeInfo fti;
 
-    return Package<ctx::context_t>::makeBroken("Failed",
+    return Package<ctx::context_t>::makeBroken("Failed task.",
         []() noexcept { return ctx::ModuleContext({}); });
 }
 
