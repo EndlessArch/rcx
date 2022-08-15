@@ -3,18 +3,20 @@ use std::{fs::{read_dir}, path::{PathBuf}, env};
 use cc::Build;
 
 fn dfs_dir(folder_name: &str, target_filelist: &mut Vec<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
-  for files in read_dir(&folder_name)? {
-    let filename = files.unwrap().file_name();
-    let file = PathBuf::from(&filename);
+  let current_dir = read_dir(&folder_name)?.map(|a| a.unwrap());
+  for file in current_dir {
+    let filename: String = file.file_name().to_str().unwrap().to_string();
+    let filepath: String = format!("{}/{}", &folder_name, &filename).to_string();
+    
+    let file_pb = PathBuf::from(format!("{}/{}", &folder_name, &filename));
+    if file_pb.is_dir() {
+      dfs_dir(filepath.as_str(), target_filelist)?;
 
-    if file.is_dir() {
-      dfs_dir(filename.to_str().unwrap(), target_filelist)?
+      continue;
     }
 
-    let filename = filename.to_str().unwrap();
-    
     if filename.ends_with(".cxx") {
-      target_filelist.push(PathBuf::from(format!("{}/{}", folder_name, filename)));
+      target_filelist.push(file_pb);
     }
   }
 
@@ -29,26 +31,68 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   
   dfs_dir(COMPILE_DIR, &mut compile_target_files)?;
 
-  // for it in compile_target_files.iter() {
-  //   println!("F: {}", it.to_str().unwrap().to_string());
-  // }
+  let target_out_dir: PathBuf = PathBuf::from(env::var("OUT_DIR")?).canonicalize().unwrap();  
+
+  println!("-L{}", target_out_dir.to_string_lossy());
 
   Build::new()
     .cpp(true)
     .files(compile_target_files)
     .include(COMPILE_DIR)
+    .include("/usr/local/include")
     .include("./subprojects/spdlog/include")
     .flag("-std=c++17")
-    .flag("-Wextra")
     .flag("-Wpedantic")
-    .flag("-g")
     .flag("-Wno-unused-parameter")
     .flag("-fno-rtti")
-    .compile("librcx.a");
+    .flag("-g")
+    .compile("rcx");
 
-  bindgen::builder()
-    .generate().expect("Failed to generate rcx bindings")
-    .write_to_file(PathBuf::from(env::var("OUT_DIR")?).join("bindings.rs"))
+  println!("cargo:rustc-link-search=/usr/local/lib");
+  println!("cargo:rustc-link-lib=LLVM");
+  println!("cargo:rustc-link-lib=boost_program_options");
+  println!("cargo:rustc-link-lib=clang");
+  println!("cargo:rustc-link-lib=clangAST");
+  println!("cargo:rustc-link-lib=clangAnalysis");
+  println!("cargo:rustc-link-lib=clangBasic");
+  println!("cargo:rustc-link-lib=clangCodeGen");
+  println!("cargo:rustc-link-lib=clangDriver");
+  println!("cargo:rustc-link-lib=clangEdit");
+  println!("cargo:rustc-link-lib=clangFrontend");
+  println!("cargo:rustc-link-lib=clangLex");
+  println!("cargo:rustc-link-lib=clangParse");
+  println!("cargo:rustc-link-lib=clangRewrite");
+  println!("cargo:rustc-link-lib=clangSema");
+  println!("cargo:rustc-link-lib=clangSerialization");
+
+    bindgen::Builder::default()
+    .allowlist_recursively(true)
+    .allowlist_function("rcx_main")
+    .header("./src/rcx.h")
+    .clang_args(
+      [ "-std=c17"
+      , "-g"
+      // , "-L/usr/local/lib"
+      // , "-lLLVM"
+      // , "-lboost_program_options"
+      // , "-lclang"
+      // , "-lclangAST"
+      // , "-lclangAnalysis"
+      // , "-lclangBasic"
+      // , "-lclangCodeGen"
+      // , "-lclangDriver"
+      // , "-lclangEdit"
+      // , "-lclangFrontend"
+      // , "-lclangLex"
+      // , "-lclangParse"
+      // , "-lclangRewrite"
+      // , "-lclangSema"
+      // , "-lclangSerialization"
+      ] )
+    .parse_callbacks(Box::new(bindgen::CargoCallbacks))
+    .generate()
+    .expect("Failed to generate rcx bindings")
+    .write_to_file(target_out_dir.join("bindings.rs"))
     .expect("Failed to write bindings");
 
   Ok(())

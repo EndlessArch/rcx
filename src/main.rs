@@ -11,6 +11,6 @@ fn main() {
     let argv: Vec<*const i8> = argv.iter().map(|a| a.as_ptr()).collect();
     let argc: i32 = argv.len() as i32;
 
-    let exit_code = unsafe { rcx_main(argc, argv.as_ptr()) };
-    std::process::exit(exit_code)
+    std::process::exit(
+        unsafe { rcx_main(argc, argv.as_ptr()) })
 }

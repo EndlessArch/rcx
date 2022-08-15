@@ -1,3 +1,5 @@
+#include "rcx.h"
+
 #include <iostream>
 
 #include <boost/program_options.hpp>
@@ -15,9 +17,9 @@
 #include <parse/parser.hpp>
 #include <conv/Modernizer.hpp>
 
-auto rcx_main(
-    [[maybe_unused]] int argc,
-    [[maybe_unused]] char * argv[]) -> int {
+int rcx_main(
+    int argc,
+    char const* const* argv) {
     ;
 
     llvm::StringMap<boost::program_options::variable_value> optMap;
