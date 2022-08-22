@@ -8,7 +8,7 @@ namespace rcx {
 #define NSRCXEND \
 } // ns rcx
 
-#include <src/parse/CTX/Context.hpp>
+#include <parse/CTX/Context.hpp>
 
 #include <functional>
 #include <string>

@@ -4,12 +4,14 @@ project('rcx', 'cpp',
     'warning_level=3',
     'cpp_std=c++17',
     'cpp_eh=none',
-    'cpp_rtti=false'
+    'cpp_rtti=true' # boost::any
     ])
 
 add_global_arguments(
   [ '-Wno-unused-parameter'
   # , '-Wno-return-type'
+  , '-fexceptions'
+  , '-v'
   ], language : [ 'c', 'cpp' ])
 
 boost_dep = dependency('boost', modules : [ 'program_options' ])

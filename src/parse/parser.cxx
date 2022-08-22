@@ -29,11 +29,13 @@
 #include "clang/Sema/CodeCompleteConsumer.h"
 #include "clang/Sema/DeclSpec.h"
 #include "clang/Serialization/PCHContainerOperations.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/TargetSelect.h"
 
 #include <fstream>
 #include <functional>
@@ -71,7 +73,6 @@
 
 #include <spdlog/spdlog.h>
 
-
 NSRCXBGN
 
 using namespace clang;
@@ -82,22 +83,84 @@ parseStart(llvm::StringMap<boost::program_options::variable_value> && optMap) no
     std::string sourceName = optMap["source"].as<std::string>();
     std::string destName = optMap["-o"].empty() ? "" : optMap["-o"].as<std::string>();
 
+    // llvm::LLVMContext ctx;
+    // llvm::InitializeNativeTarget();
+    // llvm::InitializeNativeTargetAsmPrinter();
+    // llvm::InitializeNativeTargetAsmParser();
+
+    // clang::CompilerInstance cl;
+
+    // clang::DiagnosticOptions *diagOpts = new clang::DiagnosticOptions();
+    // diagOpts->Warnings = {};
+    // diagOpts->IgnoreWarnings = 1;
+    // clang::TextDiagnosticPrinter *DiagClient = new clang::TextDiagnosticPrinter(llvm::errs(), diagOpts);
+    // clang::IntrusiveRefCntPtr<clang::DiagnosticIDs> DiagID;
+    // clang::DiagnosticsEngine Diags(DiagID, diagOpts, DiagClient);
+    // cl.createDiagnostics(DiagClient);
+    // auto pto = std::make_shared<clang::TargetOptions>();
+    // pto->Triple = llvm::sys::getDefaultTargetTriple();
+    // clang::TargetInfo *pti = clang::TargetInfo::CreateTargetInfo(cl.getDiagnostics(), pto);
+    // cl.setTarget(pti);
+    // cl.createFileManager();
+    // cl.createSourceManager(cl.getFileManager());
+    // cl.createPreprocessor(clang::TranslationUnitKind::TU_Module);
+
+    // std::vector<std::string> a;
+    // a.push_back("-Wno-everything");
+    // a.push_back(sourceName);
+
+    // std::vector<const char *> ac;
+    // for (const auto &arg : a)
+    //     ac.push_back(arg.c_str());
+        
+    // auto ar = llvm::ArrayRef<const char *>(ac);
+
+    // clang::CompilerInvocation::CreateFromArgs(cl.getInvocation(), ar, Diags);
+
+    // clang::EmitLLVMOnlyAction *action = new clang::EmitLLVMOnlyAction();
+    // cl.ExecuteAction(*action);
+
+    // abort();
+
     DiagnosticsEngine diag(
         llvm::IntrusiveRefCntPtr<DiagnosticIDs>(),
         &*llvm::IntrusiveRefCntPtr<DiagnosticOptions>());
 
     auto invc = std::make_shared<CompilerInvocation>();
     CompilerInvocation::CreateFromArgs(*invc, {
-        // "-isysroot",
-        // "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk",
-        "-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1",
-        "-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include",
+        // "-I/usr/local/include",
+        // "-isystem", "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1",
+        // "-isystem", "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include",
+
+        "-target-sdk-version=12.3",
+        "-resource-dir", "/Library/Developer/CommandLineTools/usr/lib/clang/13.1.6",
+
+        "-sys-header-deps",
+        "-isysroot", "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk",
+
+        "-internal-isystem", "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk/usr/include/c++/v1",
+        // "-internal-isystem", "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk/usr/local/include",
+        "-internal-isystem", "/Library/Developer/CommandLineTools/usr/lib/clang/13.1.6/include",
+        "-internal-externc-isystem", "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk/usr/include",
+        "-internal-externc-isystem", "/Library/Developer/CommandLineTools/usr/include",
+
+        "-stdlib=libc++",
+
+        sourceName.c_str()
+
+        // "-I/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk/usr/include/c++/v1",
+        // "-I/Library/Developer/CommandLineTools/usr/lib/clang/13.1.6/include",
+        // "-I/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk/usr/include",
+        // "-I/Library/Developer/CommandLineTools/usr/include",
     }, diag);
+
+    invc->getHeaderSearchOpts().ResourceDir = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include";
+    invc->getHeaderSearchOpts().Verbose = 1;
 
     invc->getDiagnosticOpts().ShowColors = 1;
 
     auto & fe = invc->getFrontendOpts();
-    auto f = FrontendInputFile(sourceName, Language::CXX);
+    // auto f = FrontendInputFile(sourceName, Language::CXX);
 
     // is this required ?
     invc->PreprocessorOpts = std::make_shared<PreprocessorOptions>();
@@ -107,40 +170,15 @@ parseStart(llvm::StringMap<boost::program_options::variable_value> && optMap) no
 
     invc->getLangOpts()->IncludeDefaultHeader = 1;
 
-    // invc->getHeaderSearchOpts().AddPath(
-    //     "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
-    //     frontend::IncludeDirGroup::System, false, true);
-
-//     invc->getHeaderSearchOpts().AddPath(
-// #ifdef __APPLE__
-//         "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
-// #endif
-//         "/usr/include/c++/v1",
-//         frontend::IncludeDirGroup::System, false, false);
-
-//     invc->getHeaderSearchOpts().AddPath(
-// #ifdef __APPLE__
-//         "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
-// #endif
-//         "/usr/include",
-//         frontend::IncludeDirGroup::System, false, false);
-
-// #ifdef __APPLE__
-//     invc->getHeaderSearchOpts().AddPath(
-//     "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
-//     frontend::IncludeDirGroup::IndexHeaderMap, true, false);
-// #endif
-
     invc->getHeaderSearchOpts().UseStandardSystemIncludes = 1;
     invc->getHeaderSearchOpts().UseStandardCXXIncludes = 1;
     invc->getHeaderSearchOpts().UseBuiltinIncludes = 1;
-    // invc->getHeaderSearchOpts().Sysroot = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/";
-    // invc->getHeaderSearchOpts().ResourceDir = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/";
 
     fe.ProgramAction = frontend::ASTDeclList;
-    fe.Inputs.clear(); // remove '-', stdin
-    fe.Inputs.push_back(f);
+    // fe.Inputs.clear(); // remove '-', means STDIN
+    // fe.Inputs.push_back(f);
 
+    // A clang compiler
     CompilerInstance clang;
 
     clang.setInvocation(std::move(invc));
