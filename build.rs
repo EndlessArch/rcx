@@ -44,7 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .flag("-std=c++17")
     .flag("-Wpedantic")
     .flag("-Wno-unused-parameter")
-    .flag("-fno-rtti")
+    // .flag("-fno-rtti")
     .flag("-g")
     .compile("rcx");
 
@@ -72,22 +72,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .clang_args(
       [ "-std=c17"
       , "-g"
-      // , "-L/usr/local/lib"
-      // , "-lLLVM"
-      // , "-lboost_program_options"
-      // , "-lclang"
-      // , "-lclangAST"
-      // , "-lclangAnalysis"
-      // , "-lclangBasic"
-      // , "-lclangCodeGen"
-      // , "-lclangDriver"
-      // , "-lclangEdit"
-      // , "-lclangFrontend"
-      // , "-lclangLex"
-      // , "-lclangParse"
-      // , "-lclangRewrite"
-      // , "-lclangSema"
-      // , "-lclangSerialization"
       ] )
     .parse_callbacks(Box::new(bindgen::CargoCallbacks))
     .generate()
