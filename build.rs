@@ -1,7 +1,5 @@
 use std::{fs::{read_dir}, path::{PathBuf}, env};
 
-use cc::Build;
-
 fn dfs_dir(folder_name: &str, target_filelist: &mut Vec<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
   let current_dir = read_dir(&folder_name)?.map(|a| a.unwrap());
   for file in current_dir {
@@ -28,14 +26,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   const COMPILE_DIR: &str = "./src";
 
   let mut compile_target_files: Vec<PathBuf> = Vec::new();  
-  
+
   dfs_dir(COMPILE_DIR, &mut compile_target_files)?;
 
-  let target_out_dir: PathBuf = PathBuf::from(env::var("OUT_DIR")?).canonicalize().unwrap();  
-
-  println!("-L{}", target_out_dir.to_string_lossy());
-
-  Build::new()
+  cc::Build::new()
     .cpp(true)
     .files(compile_target_files)
     .include(COMPILE_DIR)
@@ -44,34 +38,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .flag("-std=c++17")
     .flag("-Wpedantic")
     .flag("-Wno-unused-parameter")
-    // .flag("-fno-rtti")
-    .flag("-g")
+    .flag("-fno-rtti")
+    // .flag("-g")
+    // .flag("-v")
     .compile("rcx");
 
   println!("cargo:rustc-link-search=/usr/local/lib");
-  println!("cargo:rustc-link-lib=LLVM");
-  println!("cargo:rustc-link-lib=boost_program_options");
-  println!("cargo:rustc-link-lib=clang");
-  println!("cargo:rustc-link-lib=clangAST");
-  println!("cargo:rustc-link-lib=clangAnalysis");
-  println!("cargo:rustc-link-lib=clangBasic");
-  println!("cargo:rustc-link-lib=clangCodeGen");
-  println!("cargo:rustc-link-lib=clangDriver");
-  println!("cargo:rustc-link-lib=clangEdit");
-  println!("cargo:rustc-link-lib=clangFrontend");
-  println!("cargo:rustc-link-lib=clangLex");
-  println!("cargo:rustc-link-lib=clangParse");
-  println!("cargo:rustc-link-lib=clangRewrite");
-  println!("cargo:rustc-link-lib=clangSema");
-  println!("cargo:rustc-link-lib=clangSerialization");
+  let target_link_libs: Vec<&str> = vec![
+    "LLVM",
+    "clang",
+    "clangAST",
+    "clangAnalysis",
+    "clangBasic",
+    "clangDriver",
+    "clangEdit",
+    "clangFrontend",
+    "clangLex",
+    "clangParse",
+    "clangRewrite",
+    "clangSema",
+    "clangSerialization"
+  ];
+  for lib in target_link_libs.iter() {
+    println!("cargo:rustc-link-lib={}", lib);
+  }
 
-    bindgen::Builder::default()
-    .allowlist_recursively(true)
-    .allowlist_function("rcx_main")
-    .header("./src/rcx.h")
+  let target_out_dir: PathBuf = PathBuf::from(env::var("OUT_DIR")?).canonicalize().unwrap();  
+
+  bindgen::Builder::default()
+    // .allowlist_recursively(true)
+    // .allowlist_function("rcx_main")
+    .header(format!("{}/rcx.h", COMPILE_DIR))
     .clang_args(
       [ "-std=c17"
-      , "-g"
+      // , "-g"
+      // , "-v"
       ] )
     .parse_callbacks(Box::new(bindgen::CargoCallbacks))
     .generate()

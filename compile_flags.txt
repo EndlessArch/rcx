@@ -1,0 +1,6 @@
+-std=c++17
+-I./src
+-I/usr/include
+-I./subprojects/spdlog/include
+
+-I/usr/local/Cellar/llvm/14.0.6_1/include/

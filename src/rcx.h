@@ -2,13 +2,8 @@
 #define RCX_HPP
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
 #endif
-
 int rcx_main(int argc, char const* const* argv);
-
-#ifdef __cplusplus
-} // extern
-#endif
 
 #endif

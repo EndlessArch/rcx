@@ -78,10 +78,9 @@ NSRCXBGN
 using namespace clang;
 
 Package<ctx::context_t>
-parseStart(llvm::StringMap<boost::program_options::variable_value> && optMap) noexcept {
+parseStart(int argc, char * argv[]) noexcept {
 
-    std::string sourceName = optMap["source"].as<std::string>();
-    std::string destName = optMap["-o"].empty() ? "" : optMap["-o"].as<std::string>();
+    std::string sourceName = "examples/Test1.rcx";
 
     // llvm::LLVMContext ctx;
     // llvm::InitializeNativeTarget();
