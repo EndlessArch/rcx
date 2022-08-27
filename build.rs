@@ -28,6 +28,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   let mut compile_target_files: Vec<PathBuf> = Vec::new();  
 
   dfs_dir(COMPILE_DIR, &mut compile_target_files)?;
+  for file in compile_target_files.iter() {
+    println!("cargo:rerun-if-changed={}", file.as_path().display());
+  }
 
   cc::Build::new()
     .cpp(true)
