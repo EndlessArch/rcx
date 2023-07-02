@@ -25,6 +25,8 @@ NSRCXBGN
 
 namespace {
 
+#define __BRKN_PKG_NULL_STRING "\xd"
+
 template <typename T, typename... Args>
 struct has : std::false_type {};
 
@@ -48,7 +50,7 @@ using BrokenPackage = struct __brkn_pkg {
         using t_t = decltype(sr);
         using sr_t = typename std::conditional_t<
             std::is_reference_v<t_t>,
-            std::conditional_t<
+            std::conditional_t< // TODO: is this part necessary?
                 std::is_lvalue_reference_v<t_t>,
                 t_t&,
                 t_t&&>, t_t>;
@@ -73,7 +75,7 @@ using BrokenPackage = struct __brkn_pkg {
             if constexpr (std::is_same_v<arg_t, llvm::StringRef>)
                 return static_cast<llvm::StringRef>(rhs);
 
-            return "\xd";
+            return __BRKN_PKG_NULL_STRING;
         }, cont_);
     }
 };
@@ -137,6 +139,8 @@ struct _Package {
     _Package(_T && val, _FB && fb)
     : package_content_(std::forward<_T>(val)), fb_(std::forward<_FB>(fb)) {}
 
+    // maybe when to return nothing unexpectedly
+    // this forces to implement handler
     template <typename _T, typename... Args>
     static _Package<T, FallbackConstructor>
     makeBroken(_T && err, Args&&... fbcArgs) noexcept {
@@ -154,6 +158,8 @@ struct _Package {
             std::forward<Args>(fbcArgs)...);
     }
 
+    // Package can have Nothing, and since has the callback function,
+    // the callback calling could be happened after opening.
     T open() noexcept {
         return \
         std::visit([this](auto && arg) -> T {
@@ -163,10 +169,11 @@ struct _Package {
                 return static_cast<T>(arg);
 
             if constexpr (std::is_same_v<arg_t, BrokenPackage>) {
-                if(llvm::StringRef errMsg = static_cast<BrokenPackage>(arg)(); errMsg == "\xd")
+                if(llvm::StringRef errMsg = static_cast<BrokenPackage>(arg)();
+                errMsg == __BRKN_PKG_NULL_STRING)
                     spdlog::error("Error while opening package"
                     "; broken package returned error message for nothing.");
-                else spdlog::warn(errMsg.str());
+                else if(!errMsg.empty()) spdlog::warn(errMsg.str());
 
                 return this->fb_();
             }
@@ -181,6 +188,7 @@ struct _Package {
     inline auto operator()(void) noexcept { return this->open(); }
 };
 
+// the handling callback function is required.
 template <typename T, typename FBC = std::function<T()>>
 using Package = struct _Package<T, FBC>;
 

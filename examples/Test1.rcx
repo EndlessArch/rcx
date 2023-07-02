@@ -1,11 +1,32 @@
-#include <iostream>
+# #include <iostream>
+# int main(int argc, char * argv)
+# {
+#   std::cout << "Hello World\n";
+#   return 0;
+# }
 
-asdf,asdf
+namespace std {
 
-int main(int argc, char * argv[]) {
+ostream {
 
-  for(int i = 0; i< argc; ++i)
-    std::cerr << argv[i] << '\n';
+ostream(fd: int, )
 
-  return 0;
+} out(1, in|out)
+
+(<<)<T;{}>(os: std::ostream, msg: T) -> std::ostream {
+  os
 }
+
+} # ns std
+
+main(argc: int, argv: char*[]) -> int 
+{
+  std << "Hello World\n"
+
+  ret 0
+}
+
+# 2527
+# 5541 ?
+# 7615
+# ?96144 230

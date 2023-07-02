@@ -11,7 +11,7 @@ add_global_arguments(
   [ '-Wno-unused-parameter'
   # , '-Wno-return-type'
   , '-fexceptions'
-  , '-v'
+  # , '-v'
   ], language : [ 'c', 'cpp' ])
 
 boost_dep = dependency('boost', modules : [ 'program_options' ])
