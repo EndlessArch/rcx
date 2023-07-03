@@ -12,9 +12,13 @@ add_global_arguments(
   # , '-Wno-return-type'
   , '-fexceptions'
   # , '-v'
+  , '-Wno-deprecated-declarations'
   ], language : [ 'c', 'cpp' ])
 
-boost_dep = dependency('boost', modules : [ 'program_options' ])
+boost_dep = dependency('boost',
+  modules : [ 'program_options' ],
+
+  )
 
 cmake = import('cmake')
 
@@ -28,10 +32,10 @@ llvm_dep = dependency(
   # modules : [ 'core', 'native', 'bitwriter' ]
   )
 
-clang_dep = dependency(
-  'clang',
-  static : true,
-  modules : [ 'clangBasic', 'clangFrontend', 'clangCodeGen' ])
+# clang_dep = dependency(
+#   'clang',
+#   static : true,
+#   modules : [ 'clangBasic', 'clangFrontend', 'clangCodeGen' ])
 
 rcx_inc_dir = include_directories('src')
 
@@ -44,4 +48,6 @@ executable('rcx',
            sources,
            install : true,
            include_directories : rcx_inc_dir,
-           dependencies : [ spdlog_dep, llvm_dep, clang_dep, boost_dep ])
+           dependencies : [ spdlog_dep, llvm_dep,
+          #  clang_dep,
+           boost_dep ])

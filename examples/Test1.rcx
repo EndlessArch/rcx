@@ -1,20 +1,34 @@
-# #include <iostream>
-# int main(int argc, char * argv)
-# {
-#   std::cout << "Hello World\n";
-#   return 0;
-# }
-
 namespace std {
+
+// ? = compile time dynamic
+
+@{anno, compTime}
+silent(expr: ?) -> bool {
+  eval_res: __builtin::Package<> = __builtin::eval(expr)
+  ret !eval_res.empty()
+}
+
+convertible<To: {T1, Ts}, From: {F1, Fs}> a1: F1, as: Fs -> bool {
+  ret @silent(T1{F1}) && convertible<Ts, Fs>(as)
+}
 
 ostream {
 
-ostream(fd: int, )
+io_type { in, out }
+
+ostream(fd: int, io: io_type) {
+  case io {
+    in => {}
+    out => {}
+  }
+  ret self
+}
 
 } out(1, in|out)
 
-(<<)<T;{}>(os: std::ostream, msg: T) -> std::ostream {
-  os
+(<<)<T;std::convertible<T, std::string>>
+(os: std::ostream, msg: T) -> std::ostream {
+  os << msg
 }
 
 } # ns std

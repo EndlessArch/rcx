@@ -71,7 +71,7 @@ auto main(
     }
 
     auto ctx_ = rcx::parseStart(std::move(optMap));
-    auto ctx = std::get<rcx::ctx::ModuleContext>(ctx_());
+    auto ctx = std::get<rcx::ctx::SpaceContext>(ctx_());
 
     spdlog::info("Package opening successful\n");
 

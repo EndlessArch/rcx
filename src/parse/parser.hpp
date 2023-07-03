@@ -14,10 +14,37 @@ namespace parser {
 
 enum class Token {
 
+// Comment // #
+Digit,
+
+Namespace, // namespace
+Identifier,
+Parentheses, // ()
+Braces, // {}
+Brackets, // []
+Angles, // <>
+
+Comma, // ,
+
+Type, // :
+TypeArrow, // ->
+TypeDyn, // ?
+Annotation, // @
+
+Or, // |
+And, // &
+
+KeyCase, // case
+KeyReturn, // ret
+KeyThen, // =>
+
 };
 
-Package<Token>
-tokenizeIdf() noexcept;
+Token
+tokenizeIdf(std::string&) noexcept;
+
+std::string
+stringifyTok(Token) noexcept;
 
 } // ns parser
 
