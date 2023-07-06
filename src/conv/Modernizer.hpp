@@ -42,6 +42,7 @@ constexpr bool does_variant_have_v = has<T, V>::value;
 using BrokenPackage = struct __brkn_pkg {
     using callback_t = typename std::function<llvm::StringRef(void)>;
 
+    // either (error) message or message constructor
     std::variant<llvm::StringRef, callback_t> cont_;
 
     template <typename T, typename = std::enable_if_t<std::is_convertible_v<T, llvm::StringRef>>>
@@ -113,56 +114,34 @@ constexpr auto bind_constructor(Args&&... args) noexcept {
 
 } // ns anon
 
-template <typename T,
-    typename FallbackConstructor>
+template <typename T>
 struct _Package {
-    using __fbc_r_t = typename std::invoke_result_t<FallbackConstructor>;
-
-    static_assert(
-    std::disjunction_v<
-        std::is_convertible<__fbc_r_t, T>,
-        std::is_nothrow_constructible<__fbc_r_t, T>
-    >, "Fallback constructor's return type should be construct/convertible to type `T` of Package<>.");
-
     std::variant<T, BrokenPackage> package_content_;
 
-    FallbackConstructor fb_;
+    template <typename _T>
+    _Package(_T && val)
+    : package_content_(std::forward<_T>(val)) {}
 
-    template <typename _T, typename... Args>
-    _Package(_T && val, Args&&... cargs)
-    : package_content_(std::forward<_T>(val)), fb_(bind_constructor<T>(cargs...)) {
-        static_assert(std::is_constructible_v<T, Args...>,
-        "Unable to build fallback constructor.");
-    }
-
-    template <typename _T, typename _FB>
-    _Package(_T && val, _FB && fb)
-    : package_content_(std::forward<_T>(val)), fb_(std::forward<_FB>(fb)) {}
-
-    // maybe when to return nothing unexpectedly
-    // this forces to implement handler
-    template <typename _T, typename... Args>
-    static _Package<T, FallbackConstructor>
-    makeBroken(_T && err, Args&&... fbcArgs) noexcept {
+    template <typename _T>
+    static auto
+    makeBroken(_T&& err) noexcept {
         static_assert(
             std::disjunction_v<
-                std::is_constructible<_T, llvm::StringRef>,
                 std::is_convertible<_T, llvm::StringRef>,
-                std::is_invocable_r<llvm::StringRef, _T>
-            >,  "'_T && err' should either be construct/convertible to `llvm::StringRef`"
-                " or have `llvm::StringRef` as return type."
+                std::is_convertible<_T, llvm::StringRef>
+            >,  "Parameter _T&& err should be "
+                "either llvm::StringRef constructible or convertible"
         );
 
-        return _Package<T, FallbackConstructor>(
-            BrokenPackage{}.setErrPrtCB(std::forward<_T>(err)),
-            std::forward<Args>(fbcArgs)...);
+        return _Package<T>(
+            BrokenPackage{}.setErrPrtCB(std::forward<_T>(err)));
     }
 
     // Package can have Nothing, and since has the callback function,
     // the callback calling could be happened after opening.
-    T open() noexcept {
+    std::optional<T> open() noexcept {
         return \
-        std::visit([this](auto && arg) -> T {
+        std::visit([](auto && arg) -> std::optional<T> {
             using arg_t = typename std::remove_reference_t<decltype(arg)>;
 
             if constexpr (std::is_same_v<arg_t, T>)
@@ -175,13 +154,13 @@ struct _Package {
                     "; broken package returned error message for nothing.");
                 else if(!errMsg.empty()) spdlog::warn(errMsg.str());
 
-                return this->fb_();
+                return {};
             }
 
             spdlog::error(
             "Failed to open package; package has neither expected content nor error callback:"
             " replacing task by instantly default constructed.");
-            return this->fb_();
+            return {};
         }, this->package_content_);
     }
 
@@ -189,8 +168,8 @@ struct _Package {
 };
 
 // the handling callback function is required.
-template <typename T, typename FBC = std::function<T()>>
-using Package = struct _Package<T, FBC>;
+template <typename T>
+using Package = struct _Package<T>;
 
 NSRCXEND
 

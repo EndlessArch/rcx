@@ -132,7 +132,7 @@ BGN:
 
         cnt = 0;
         while(
-            [](char a) {
+            [](char a) noexcept {
                 return llvm::isAlnum(a) || a == '_';
             }(*(it + cnt)) ) ++cnt;
         if(cnt) {
@@ -161,9 +161,9 @@ BGN:
         return a;
     };
 
-    auto glob_ctx = ctx::SpaceContext(":)global_ns", {});
-    auto& cur_ctx = glob_ctx; // current context
-    auto& par_ctx = glob_ctx; // parent context
+    // NOTE: identifier does not start with special character.
+    auto cur_ctx =
+        ctx::SpaceContext::null().setName("$global_namespace");
 
     do {
         auto idf = f_idf();
@@ -183,14 +183,24 @@ using namespace parser;
 
         auto tok = tokenizeIdf(idf);
 
+        static auto parse_expect
+        = [&f_idf](auto& from, const auto& to) noexcept {
+            using to_t = std::remove_cv_t<std::remove_reference_t<decltype(to)>>;
+            from = f_idf();
+            if constexpr (std::is_same_v<to_t, Token>) {
+                if(auto tk = tokenizeIdf(from); tk != to)
+                    spdlog::error("Expected {}, found {}", stringifyTok(to), stringifyTok(tk));
+            } else
+                if(from != to) spdlog::error("Expected \'{}\', found \'{}\'", from, to);
+            return from;
+        };
+
         switch(tok) {
         case Token::Namespace: {
-            idf = f_idf();
-            tok = tokenizeIdf(idf);
-            if(tok != Token::Identifier)
-                handle_unexpected(tok, idf);
-            ctx::context_t c = ctx::SpaceContext(idf, {});
-            glob_ctx.addDef(c);
+            auto name = parse_expect(idf, Token::Identifier);
+            parse_expect(idf, "{");
+            ctx::context_t c = ctx::SpaceContext(cur_ctx, idf, {});
+            cur_ctx.addDef(c);
         }
         case Token::Identifier: {
             ;
@@ -216,16 +226,30 @@ using namespace parser;
             else
                 handle_unexpected(tok, a);
             ;
-            std::visit(
-                [&](auto& arg) {
-                    if constexpr(std::is_same_v<decltype(arg), ctx::SpaceContext>) {
-                        par_ctx = cur_ctx;
-                        cur_ctx = arg;
-                    } else
-                        return;
-                },
-                glob_ctx.addDef(ctx::FunctionContext(std::move(annos)))
-            );
+            // std::visit(
+            //     [&](auto& arg) noexcept {
+            //         // using arg_t = std::remove_cv_t<std::remove_reference_t<decltype(arg)>>;
+            //         // if constexpr(std::is_same_v<arg_t, ctx::SpaceContext>)
+            //         //     // case of SpaceContext
+            //         //     cur_ctx = &arg;
+            //         // else if constexpr(
+            //         //     // case of Class/Function-Context
+            //         //     std::disjunction_v<
+            //         //         std::is_same<arg_t, ctx::ClassContext>,
+            //         //         std::is_same<arg_t, ctx::FunctionContext>>) {
+            //         //     ;
+            //         //     cur_ctx = &arg.getSpace();
+            //         // } else {
+            //         //     // unreachable
+            //         //     // C++20
+            //         //     // []<bool f=false>{static_assert(f,"");}();
+            //         //     static_assert(!sizeof(arg_t*), "");
+            //         //     spdlog::warn("code unreachable");
+            //         // }
+            //     },
+            //     cur_ctx.addDef(ctx::FunctionContext(std::move(annos)))
+            // );
+            cur_ctx.addDef(ctx::FunctionContext(cur_ctx, std::move(annos)));
         }
         case Token::Parentheses: {
             // in case of binary function
@@ -237,14 +261,14 @@ using namespace parser;
 #undef handle_unexpected
     } while(1);
 
-    return Package<ctx::context_t>::makeBroken("Failed task.",
-        []() noexcept { return ctx::SpaceContext("", {}); });
+    return Package<ctx::context_t>(std::move(cur_ctx));
+
+    return Package<ctx::context_t>::makeBroken("Failed task.");
 }
 
 Package<ctx::context_t>
 parseModule(void) noexcept {
-    return Package<ctx::context_t>::makeBroken("Failed to parse module.",
-        []() noexcept { return ctx::SpaceContext("", {}); });
+    return Package<ctx::context_t>::makeBroken("Failed to parse module.");
 }
 
 NSRCXEND

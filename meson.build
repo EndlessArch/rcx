@@ -26,6 +26,9 @@ cmake = import('cmake')
 spdlog_sproj = cmake.subproject('spdlog')
 spdlog_dep = spdlog_sproj.dependency('spdlog')
 
+argparse_sproj = cmake.subproject('argparse')
+argparse_dep = argparse_sproj.dependency('argparse')
+
 llvm_dep = dependency(
   'llvm',
   version : '>= 13.0'
@@ -41,6 +44,7 @@ rcx_inc_dir = include_directories('src')
 
 sources = [
   'src/rcx.cxx',
+  'src/parse/CTX/Context.cxx',
   'src/parse/parser.cxx'
   ]
 
@@ -48,6 +52,9 @@ executable('rcx',
            sources,
            install : true,
            include_directories : rcx_inc_dir,
-           dependencies : [ spdlog_dep, llvm_dep,
-          #  clang_dep,
-           boost_dep ])
+           dependencies : [
+            spdlog_dep,
+            argparse_dep,
+            llvm_dep,
+            #clang_dep,
+            boost_dep ])

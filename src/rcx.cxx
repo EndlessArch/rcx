@@ -70,10 +70,11 @@ auto main(
             optMap[it->first] = std::move(it->second);
     }
 
-    auto ctx_ = rcx::parseStart(std::move(optMap));
-    auto ctx = std::get<rcx::ctx::SpaceContext>(ctx_());
-
-    spdlog::info("Package opening successful\n");
+    auto ctx_ = rcx::parseStart(std::move(optMap))();
+    if(ctx_.has_value())
+        spdlog::info("Package receive successful\n");
+    else
+        spdlog::info("Got nothing\n");
 
     return 0;
 }
