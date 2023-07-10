@@ -12,7 +12,7 @@ convertible<To: {T1, Ts}, From: {F1, Fs}> a1: F1, as: Fs -> bool {
   ret @silent(T1{F1}) && convertible<Ts, Fs>(as)
 }
 
-ostream {
+struct ostream {
 
 io_type { in, out }
 

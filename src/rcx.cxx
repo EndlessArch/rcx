@@ -72,9 +72,9 @@ auto main(
 
     auto ctx_ = rcx::parseStart(std::move(optMap))();
     if(ctx_.has_value())
-        spdlog::info("Package receive successful\n");
+        spdlog::info("Package receive successful");
     else
-        spdlog::info("Got nothing\n");
+        spdlog::info("Got nothing");
 
     return 0;
 }

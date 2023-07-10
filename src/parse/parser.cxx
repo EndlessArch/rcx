@@ -10,6 +10,7 @@
 #include <iterator>
 #include <memory>
 
+#include <parse/AST/AST.hpp>
 #include <parse/CTX/Context.hpp>
 #include <conv/Modernizer.hpp>
 
@@ -49,7 +50,8 @@ tokenizeIdf(std::string& idf) noexcept {
         { "&", Token::And },
         { "case", Token::KeyCase },
         { "ret", Token::KeyReturn },
-        { "=>", Token::KeyThen }
+        { "=>", Token::KeyThen },
+        { "struct", Token::KeyStruct }
     };
     auto it = tokMap.find(idf);
     return it != tokMap.end() ? it->second :
@@ -75,11 +77,28 @@ stringifyTok(Token tok) noexcept {
         { Token::And, "and" },
         { Token::KeyCase, "keyword case" },
         { Token::KeyReturn, "keyword return" },
-        { Token::KeyThen, "=>" }
+        { Token::KeyThen, "=>" },
+        { Token::KeyStruct, "structure" }
     };
     // spdlog::debug("Token: {}", (int)tok);
     auto a = nameMap.find(tok);
     return a == nameMap.end() ? "identifier" : nameMap.at(tok);
+}
+
+template <typename F>
+Package<metavars_t>
+parseMetaVars(F& freader) noexcept {
+    std::string idf = freader();
+    if(idf == ">") return Package<metavars_t>(metavars_t{});
+
+    auto tok = tokenizeIdf(idf);
+    
+    if(tok != Token::Identifier) {
+        return Package<metavars_t>::makeBroken(
+            fmt::format("Expected {}, found {}", stringifyTok(tok), idf));
+    }
+
+    std::pair<std::string, expr_t*> meta_pair{};
 }
 
 } // ns parser
@@ -148,8 +167,24 @@ BGN:
                 buf = buf.substr(2);
                 return a;
             }
-        } else if(buf.front() == '=') {
-            if(buf.at(1) == '>') {
+        }
+        if(buf.front() == '=') {
+            if(auto ch = buf.at(1);
+            ch == '>' || ch == '=') {
+                auto a = std::string(it, it + 1);
+                buf = buf.substr(2);
+                return a;
+            }
+        }
+        if(buf.front() == '<') {
+            if(buf.at(1) == '=') {
+                auto  a = std::string(it, it + 1);
+                buf = buf.substr(2);
+                return a;
+            }
+        }
+        if(buf.front() == '>') {
+            if(buf.at(1) == '=') {
                 auto a = std::string(it, it + 1);
                 buf = buf.substr(2);
                 return a;
@@ -164,6 +199,28 @@ BGN:
     // NOTE: identifier does not start with special character.
     auto cur_ctx =
         ctx::SpaceContext::null().setName("$global_namespace");
+
+    using type_t = ast::Type;
+    using expr_t = parser::expr_t;
+
+    using annos_t = std::vector<std::string>;
+    using metalist_t = parser::metavars_t;
+    using arglist_t = std::vector<std::pair<type_t, std::string>>;
+    // annos, name, meta variables, arguments, expressions
+    using fn_t = std::tuple<
+        annos_t, std::string,
+        metalist_t, arglist_t,
+        std::vector<expr_t> >;
+    // annos, name, meta variable, members&init values, methods
+    using cls_t = std::tuple<
+        annos_t, std::string,
+        metalist_t,
+        std::vector<std::pair<std::string, expr_t>>,
+        std::vector<fn_t> >;
+
+    using property_t = std::variant<annos_t, fn_t, cls_t>;
+
+    std::optional<property_t> parse_buf{};
 
     do {
         auto idf = f_idf();
@@ -195,75 +252,66 @@ using namespace parser;
             return from;
         };
 
-        switch(tok) {
-        case Token::Namespace: {
-            auto name = parse_expect(idf, Token::Identifier);
-            parse_expect(idf, "{");
-            ctx::context_t c = ctx::SpaceContext(cur_ctx, idf, {});
-            cur_ctx.addDef(c);
-        }
-        case Token::Identifier: {
-            ;
-        }
-        case Token::Annotation: {
-            auto a = f_idf();
-            auto annos = std::vector<std::string>(2);
-            if(a == "{") {
-                do {
-                    a = f_idf();
-                    tok = tokenizeIdf(a);
-                    if(tok == Token::Identifier) {
-                        annos.push_back(a);
-                        a = f_idf();
-                        if(a == ",") continue;
-                        if(a == "}") break;
-                        handle_unexpected(tokenizeIdf(a), a);
-                        break; //
+        if (!parse_buf.has_value()) {
+            if(tok == Token::Annotation) {
+                parse_buf = annos_t{};
+                continue;
+            }
+            // function parsing starts with the name,
+            // otherwise, {}.
+            if(tok == Token::Identifier) {
+                parse_buf = fn_t({}, idf, {}, {}, {});
+                continue;
+            }
+            if(idf == "(") {
+                // parse binary function
+                parse_buf = fn_t({}, fmt::format("({})", parse_expect(idf, Token::Identifier)), {}, {}, {});
+                continue;
+            }
+            if(tok == Token::KeyStruct) {
+                parse_buf = cls_t({}, "", {}, {}, {});
+            }
+            spdlog::error("Unexpected {}, \'{}\'", stringifyTok(tok), idf);
+            continue;
+        } else { // at least annos are parsed
+            std::visit([&idf, tok, &f_idf](auto&& arg) -> void {
+                using arg_t = std::remove_reference_t<decltype(arg)>;
+                if constexpr (
+                    std::is_same_v<fn_t, arg_t>
+                ) {
+                    // auto& fannos = std::get<0>(arg);
+                    // auto& fname = std::get<1>(arg);
+                    // auto& fmetas = std::get<2>(arg);
+                    // auto& fargs = std::get<3>(arg);
+                    // auto& fbody = std::get<4>(arg);
+                    if(idf == "<") {
+                        // parse metalist
+                        parser::parseMetaVars(f_idf);
                     }
-                } while(1);
-            } else if((tok = tokenizeIdf(a)) == Token::Identifier)
-                annos[0] = a;
-            else
-                handle_unexpected(tok, a);
-            ;
-            // std::visit(
-            //     [&](auto& arg) noexcept {
-            //         // using arg_t = std::remove_cv_t<std::remove_reference_t<decltype(arg)>>;
-            //         // if constexpr(std::is_same_v<arg_t, ctx::SpaceContext>)
-            //         //     // case of SpaceContext
-            //         //     cur_ctx = &arg;
-            //         // else if constexpr(
-            //         //     // case of Class/Function-Context
-            //         //     std::disjunction_v<
-            //         //         std::is_same<arg_t, ctx::ClassContext>,
-            //         //         std::is_same<arg_t, ctx::FunctionContext>>) {
-            //         //     ;
-            //         //     cur_ctx = &arg.getSpace();
-            //         // } else {
-            //         //     // unreachable
-            //         //     // C++20
-            //         //     // []<bool f=false>{static_assert(f,"");}();
-            //         //     static_assert(!sizeof(arg_t*), "");
-            //         //     spdlog::warn("code unreachable");
-            //         // }
-            //     },
-            //     cur_ctx.addDef(ctx::FunctionContext(std::move(annos)))
-            // );
-            cur_ctx.addDef(ctx::FunctionContext(cur_ctx, std::move(annos)));
+                    if(idf == "(") {
+                        // parse arguments
+                    }
+                    if(tok == Token::TypeArrow) {
+                        // parse return type
+                    }
+                    if(idf == "{") {
+                        // parse expressions
+                    }
+                }
+                if constexpr (
+                    std::is_same_v<cls_t, arg_t>
+                ) {
+                    ;
+                }
+                // annos only
+            }, parse_buf.value());            
         }
-        case Token::Parentheses: {
-            // in case of binary function
-            ;
-        }
-        default:;
-            spdlog::warn("Unexpected token: {} ({})", idf, stringifyTok(tok));
-        }
+
 #undef handle_unexpected
     } while(1);
 
     return Package<ctx::context_t>(std::move(cur_ctx));
-
-    return Package<ctx::context_t>::makeBroken("Failed task.");
+    // return Package<ctx::context_t>::makeBroken("Failed task.");
 }
 
 Package<ctx::context_t>

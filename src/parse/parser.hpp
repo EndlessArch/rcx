@@ -1,6 +1,7 @@
 #ifndef RCX_PARSE_PARSER_HPP
 #define RCX_PARSE_PARSER_HPP
 
+#include <parse/AST/AST.hpp>
 #include <parse/CTX/Context.hpp>
 #include <conv/Modernizer.hpp>
 
@@ -37,6 +38,7 @@ And, // &
 KeyCase, // case
 KeyReturn, // ret
 KeyThen, // =>
+KeyStruct, // struct
 
 };
 
@@ -45,6 +47,20 @@ tokenizeIdf(std::string&) noexcept;
 
 std::string
 stringifyTok(Token) noexcept;
+
+using expr_t =
+  decltype(merge_variant_t(
+    fill_every_case<
+      ast::BOp,
+      ast::Function,
+      ast::Call /* INSERT */>(),
+    std::declval<std::variant<ast::Call>>()
+  ));
+using metavars_t = std::vector<std::pair<std::string, expr_t>>;
+
+template <typename F>
+Package<metavars_t>
+parseMetaVars(F&) noexcept;
 
 } // ns parser
 

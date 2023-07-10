@@ -1,5 +1,5 @@
-#ifndef RCX_1_CTX_CONTEXT_HPP
-#define RCX_1_CTX_CONTEXT_HPP
+#ifndef RCX_CTX_CONTEXT_HPP
+#define RCX_CTX_CONTEXT_HPP
 
 #include <initializer_list>
 #include <utility>
