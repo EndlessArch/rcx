@@ -50,10 +50,11 @@ stringifyTok(Token) noexcept;
 
 using expr_t =
   decltype(merge_variant_t(
-    fill_every_case<
-      ast::BOp,
-      ast::Function,
-      ast::Call /* INSERT */>(),
+    std::declval<
+      fill_every_case<
+        ast::BOp,
+        ast::Function,
+        ast::Call /* INSERT */>>(),
     std::declval<std::variant<ast::Call>>()
   ));
 using metavars_t = std::vector<std::pair<std::string, expr_t>>;

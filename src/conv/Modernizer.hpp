@@ -2,6 +2,9 @@
 #define RCX_CONV_MODERNIZER_HPP
 
 #include <condition_variable>
+#include <optional>
+#include <variant>
+
 #define NSRCXBGN \
 namespace rcx {
 
@@ -40,25 +43,22 @@ merge_variant_t(std::variant<As...> l, std::variant<Bs...> r) noexcept
 //
 
 template <template <class, class> typename T, typename A, typename B>
-constexpr auto
-fill_every_case_impl(void) noexcept {
-    return std::declval<std::variant<T<A, B>, T<B, A>>>();
+constexpr auto fill_every_case_impl() noexcept {
+    return std::variant<T<A, B>, T<B, A>>{};
 }
 
-template <template <class, class> typename T, typename A, typename B, 
-typename Args1, typename... Args>
-constexpr auto
-fill_every_case_impl(void) noexcept {
-    return merge_variant_t(
-        std::declval<std::variant<T<A, B>, T<B, A>>>(),
-        fill_every_case_impl<T, B, Args1, Args...>());
+template <template <class, class> typename T, typename A, typename B,
+typename C /* prevent ambiguousness */, typename... D>
+constexpr auto fill_every_case_impl() noexcept {
+    return \
+    merge_variant_t(
+        std::variant<T<A, B>, T<B, A>>{},
+        fill_every_case_impl<T, A, C, D...>(),
+        fill_every_case_impl<T, B, C, D...>());
 }
 
 template <template <class, class> typename T, typename... Args>
-constexpr auto
-fill_every_case(void) noexcept {
-    return fill_every_case_impl<T, Args...>();
-}
+using fill_every_case = decltype(fill_every_case_impl<T, Args...>());
 
 NSRCXEND
 

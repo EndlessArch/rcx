@@ -39,8 +39,10 @@ public:
         return BaseContext<T, P>();
     }
 
+    BaseContext(const BaseContext<T, P>&) = default;
+
     template <typename U>
-    BaseContext(U& parent) : parent_(&parent), childs_{} {}
+    BaseContext(const U& parent) : parent_(&parent), childs_{} {}
     ~BaseContext() = default;
 
     BaseContext&
@@ -88,7 +90,7 @@ public:
 
     template <typename T>
     SpaceContext(T& parent, const std::string & name, std::initializer_list<defs_t> && il)
-    : BaseContext(parent), name_(name), ctx_(std::move(il)) {}
+    : BaseContext<SpaceContext>(parent), name_(name), ctx_(std::move(il)) {}
 
     inline
     auto& setName(const std::string& name) noexcept {

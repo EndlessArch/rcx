@@ -4,6 +4,7 @@
 #include <conv/Modernizer.hpp>
 
 #include <map>
+#include <variant>
 #include <vector>
 
 #include <llvm/IR/IRBuilder.h>
@@ -17,6 +18,12 @@ using codegen_t = void*;
 template <typename T>
 class AST {
 public:
+  AST() {}
+  AST(const AST<T>&) {}
+  AST(AST<T>&&) {}
+
+  ~AST() {}
+
   codegen_t&& generateCode() noexcept;
 };
 
@@ -24,7 +31,7 @@ class Type : AST<Type> {
   std::string name_;
 public:
 
-  Type(const std::string& name) : name_(name) {}
+  Type(const std::string& name) : AST<Type>{}, name_(name) {}
 
   // class type constructor
   // Type(const std::string& name, const std::vector<Type>& mem_ty)
@@ -66,8 +73,11 @@ public:
     BNE
   };
 
+  BOp() : AST<BOp<A, B>>{}, op_ty_{}, lhs_{}, rhs_{} {}
+
   BOp(OpList opTy, A&& lhs, B&& rhs)
-  : op_ty_(opTy), lhs_(std::move(lhs)), rhs_(std::move(rhs)) {}
+  : AST<BOp<A, B>>{}
+    , op_ty_(opTy), lhs_(std::move(lhs)), rhs_(std::move(rhs)) {}
 
   llvm::Value*
   generateCode(llvm::IRBuilder<>& builder) noexcept {
@@ -100,8 +110,11 @@ class Function : AST<Function> {
 
 public:
 
-  Function() : ret_("void"), arg_list_{} {}
-  ~Function() = default;
+  Function() : AST<Function>{}, ret_("void"), arg_list_{} {}
+  Function(const Function& f) : AST<Function>(f)
+    , ret_(f.ret_), arg_list_(f.arg_list_) {}
+  Function(Function&& f) : AST<Function>(std::move(f))
+    , ret_(f.ret_), arg_list_(std::move(f.arg_list_)) {}
 
   Function(Type ret, std::vector<Type>&& args)
   : ret_(ret), arg_list_(std::move(args)) {}
@@ -119,14 +132,16 @@ public:
 };
 
 class Call : AST<Call> {
-  std::variant<Call> fn_;
+  std::variant<Function> fn_;
+
 public:
 
   Call() = default;
-  ~Call() = default;
+  Call(const Call& c) : AST<Call>(), fn_(c.fn_) {}
+  Call(Call&& c) : AST<Call>(), fn_(std::move(c.fn_)) {}
 
-  template <typename T>
-  Call(T&& a) : fn_(std::move(a)) {}
+  // template <typename T>
+  // Call(T&& a) : fn_(std::move(a)) {}
 
   llvm::CallInst*
   generateCode(llvm::IRBuilder<>& builder) noexcept {
@@ -138,7 +153,6 @@ public:
             std::is_same_v<Call,
               std::remove_reference_t<decltype(fn)>
             >) {
-              // TODO: Return alloca invovling block
               llvm::CallInst* c = fn.generateCode(builder);
               return (llvm::Function*)builder.CreateAlloca(c->getType(), nullptr, "call_tmp_fn");
           } else
