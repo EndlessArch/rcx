@@ -43,9 +43,9 @@ llvm_dep = dependency(
 rcx_inc_dir = include_directories('src')
 
 sources = [
-  'src/rcx.cxx',
   'src/parse/CTX/Context.cxx',
-  'src/parse/parser.cxx'
+  'src/parse/parser.cxx',
+  'src/rcx.cxx'
   ]
 
 executable('rcx',

@@ -14,8 +14,6 @@
 #include <parse/CTX/Context.hpp>
 #include <conv/Modernizer.hpp>
 
-#include <boost/program_options/variables_map.hpp>
-
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/StringExtras.h> // isalnum
 #include <llvm/ADT/Triple.h>
@@ -104,18 +102,15 @@ parseMetaVars(F& freader) noexcept {
 } // ns parser
 
 Package<ctx::context_t>
-parseStart(llvm::StringMap<boost::program_options::variable_value> && optMap) noexcept {
+parseStart(argparse::ArgumentParser && optMap) noexcept {
     ;
-
-    for(auto it = optMap.begin(); it != optMap.end(); ++it)
-        spdlog::debug("|MapChk| (" + it->first().str() + ", " + it->second.as<std::string>() + ')');
 
     std::fstream f_src, f_out;
 
     {
-        auto sourceName = optMap["source"].as<std::string>();
-        auto destName = optMap["-o"].empty() ?
-            "exec.out" : optMap["-o"].as<std::string>().c_str();
+        auto sourceName = optMap.get<std::string>("source");
+        auto destName = optMap.get<std::string>("-o").empty() ?
+            "exec.out" : optMap.get<std::string>("-o");
 
         f_src = std::fstream(sourceName, std::ios_base::in);
         f_out = std::fstream(destName, std::ios_base::out);

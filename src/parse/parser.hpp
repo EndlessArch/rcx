@@ -5,9 +5,9 @@
 #include <parse/CTX/Context.hpp>
 #include <conv/Modernizer.hpp>
 
-#include <boost/program_options/variables_map.hpp>
-
 #include <llvm/ADT/StringMap.h>
+
+#include <argparse.h>
 
 NSRCXBGN
 
@@ -66,7 +66,7 @@ parseMetaVars(F&) noexcept;
 } // ns parser
 
 Package<ctx::context_t>
-parseStart(llvm::StringMap<boost::program_options::variable_value> &&) noexcept;
+parseStart(argparse::ArgumentParser &&) noexcept;
 
 // craft module
 Package<ctx::context_t>
