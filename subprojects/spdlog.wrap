@@ -1,5 +1,0 @@
-[wrap-git]
-url = https://github.com/gabime/spdlog.git
-
-[provide]
-dependency_names = spdlog

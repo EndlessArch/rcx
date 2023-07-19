@@ -43,7 +43,10 @@ public:
 
     template <typename U>
     BaseContext(const U& parent) : parent_(&parent), childs_{} {}
-    ~BaseContext() = default;
+    ~BaseContext() {
+        parent_ = nullptr;
+        childs_.clear();
+    }
 
     BaseContext&
     operator=(const BaseContext& rhs) {

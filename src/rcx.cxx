@@ -34,7 +34,7 @@ auto main(
         res = program.parse(argc, (const char **)argv);
     } catch(const std::runtime_error& e) {
         std::cerr << e.what() << '\n';
-        std::cerr << res;
+        std::cerr << program; //res;
         std::abort();
     }
 
