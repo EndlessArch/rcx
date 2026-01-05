@@ -12,9 +12,11 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - uses: actions/checkout@v3
-    #- uses: actions/setup-python@v1
-    - name: Install Dependencies
+    - name: Pull git submodule recursively
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    - name: Install dependency; Boost, LLVM..
       run: |
         sudo apt-get -y install libboost-all-dev llvm-15 libclang-common-15-dev # libclang-14-dev
         sudo ln -s /usr/bin/llvm-config-15 /usr/bin/llvm-config
