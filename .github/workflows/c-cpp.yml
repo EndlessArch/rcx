@@ -13,14 +13,14 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    - uses: actions/setup-python@v1
+    #- uses: actions/setup-python@v1
     - name: Install Dependencies
       run: |
-        sudo apt-get -y install libboost-all-dev llvm-14 libclang-common-14-dev # libclang-14-dev
-        sudo ln -s /usr/bin/llvm-config-14 /usr/bin/llvm-config
-    - name: Meson Build
-      uses: BSFishy/meson-build@v1.0.3
+        sudo apt-get -y install libboost-all-dev llvm-15 libclang-common-15-dev # libclang-14-dev
+        sudo ln -s /usr/bin/llvm-config-15 /usr/bin/llvm-config
+    - name: CMake Build
+      uses: threeal/cmake-action@v2.1.0
       with:
-        action: build
-        directory: build
-        options: --verbose
+        build-dir: out
+        options: -DCMAKE_PREFIX_PATH=/usr/lib/llvm15
+        build-args: --parallel
