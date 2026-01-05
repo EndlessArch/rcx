@@ -1,6 +1,7 @@
 #include "Context.hpp"
 
 NSRCXBGN
+
 namespace ctx {
 // void
 // SpaceContext::addDef(context_t && rhs) noexcept {
@@ -8,4 +9,5 @@ namespace ctx {
 // }
 
 } // ns ctx
+
 NSRCXEND

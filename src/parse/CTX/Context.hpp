@@ -5,13 +5,15 @@
 #include <utility>
 #include <variant>
 
-#include <conv/Modernizer.hpp>
-
-#include <llvm/IR/Module.h>
+// #include <conv/Modernizer.hpp>
+#include <conv/Variantical.hpp>
 
 // check if the class is involved in `context_t`
+using namespace rcx::variant;
 #define CHK_CLS(clsName) \
-using __chK_t = std::enable_if_t<does_variant_have_v<clsName, context_t>>
+  using __chK_t = std::enable_if_t<does_variant_have_v<clsName, context_t>>
+
+#include <llvm/IR/Module.h>
 
 NSRCXBGN
 namespace ctx {
@@ -55,12 +57,12 @@ public:
     }
 
     template <typename _T, typename _P>
-    inline
+    //    inline
     BaseContext<_T, _P>* getParentSpc() noexcept {
         return reinterpret_cast<BaseContext<_T, _P> *>(parent_);
     }
 
-    inline
+  //    inline
     auto& childs() noexcept {
         return childs_;
     }
@@ -95,13 +97,13 @@ public:
     SpaceContext(T& parent, const std::string & name, std::initializer_list<defs_t> && il)
     : BaseContext<SpaceContext>(parent), name_(name), ctx_(std::move(il)) {}
 
-    inline
+  //    inline
     auto& setName(const std::string& name) noexcept {
         name_ = name;
         return *this;
     }
 
-    inline
+  //    inline
     defs_t& addDef(const context_t& rhs) noexcept {
         ctx_.push_back(rhs);
         return ctx_.back();
@@ -123,13 +125,13 @@ public:
         anno_(std::move(il)),
         spc_(*this, "property_space", {}) {}
 
-    inline
+  //    inline
     PropertyContext&
     addAnno(const std::string& rhs) noexcept {
         anno_.push_back(rhs);
     }
 
-    inline
+  //    inline
     SpaceContext&
     getSpace() noexcept {
         return spc_;

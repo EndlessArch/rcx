@@ -1,5 +1,4 @@
 #include "parser.hpp"
-#include "spdlog/fmt/bundled/core.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -12,7 +11,6 @@
 
 #include <parse/AST/AST.hpp>
 #include <parse/CTX/Context.hpp>
-#include <conv/Modernizer.hpp>
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/StringExtras.h> // isalnum
@@ -22,6 +20,7 @@
 #include <llvm/Support/Host.h>
 #include <llvm/Support/MemoryBuffer.h>
 
+#include <argparse/argparse.hpp>
 #include <spdlog/spdlog.h>
 
 NSRCXBGN
@@ -97,6 +96,8 @@ parseMetaVars(F& freader) noexcept {
     }
 
     std::pair<std::string, expr_t*> meta_pair{};
+
+    return Package<metavars_t>::makeBroken("");
 }
 
 } // ns parser
@@ -108,9 +109,8 @@ parseStart(argparse::ArgumentParser && optMap) noexcept {
     std::fstream f_src, f_out;
 
     {
-        auto sourceName = optMap.get<std::string>("source");
-        auto destName = optMap.get<std::string>("-o").empty() ?
-            "exec.out" : optMap.get<std::string>("-o");
+        auto sourceName = optMap.get<std::string>("-s");
+        auto destName = optMap.get<std::string>("-o");
 
         f_src = std::fstream(sourceName, std::ios_base::in);
         f_out = std::fstream(destName, std::ios_base::out);
@@ -217,6 +217,8 @@ BGN:
 
     std::optional<property_t> parse_buf{};
 
+    //    using namespace parser;
+
     do {
         auto idf = f_idf();
         // enum class ParsingType {
@@ -231,7 +233,7 @@ continue; }
 
         if(idf.empty()) break;
 
-using namespace parser;
+	using namespace parser;
 
         auto tok = tokenizeIdf(idf);
 

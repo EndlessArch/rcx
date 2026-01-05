@@ -2,14 +2,13 @@
 #include <iostream>
 #include <memory>
 
-#include <llvm/ADT/StringMap.h>
-#include <llvm/ADT/StringRef.h>
+// #include <llvm/ADT/StringMap.h>
+// #include <llvm/ADT/StringRef.h>
 
-#include <argparse.h>
+#include <argparse/argparse.hpp>
 #include <spdlog/spdlog.h>
 
 #include <parse/parser.hpp>
-#include <conv/Modernizer.hpp>
 
 auto main(
     /*[[maybe_unused]]*/int argc,
@@ -21,21 +20,29 @@ auto main(
 #endif
 
     argparse::ArgumentParser program("rcx", "1.0.0");
-    program.enable_help();
+    //    program.enable_help();
 
-    program.add_argument("-s", "--source",
-        "an input code file path", true);
-    
-    program.add_argument("-o",
-        "path for executable output result", false);
+    program.add_argument("-s", "--source")
+      .help("file path to an input code")
+      .metavar("SOURCE")
+      .required();
+    //    program.add_argument("-s", "--source",
+    //        "an input code file path", true);
 
-    argparse::ArgumentParser::Result res;
+    program.add_argument("-o", "--output")
+      .help("directory or path where executable output file installed")
+      .metavar("OUTPUT")
+      .default_value(std::string("./a.out"));
+    //    program.add_argument("-o",
+    //        "path for executable output result", false);
+
+    //    argparse::ArgumentParser::Result res;
     try {
-        res = program.parse(argc, (const char **)argv);
-    } catch(const std::runtime_error& e) {
+        program.parse_args(argc, (const char **)argv);
+    } catch(const std::exception& e) {
         std::cerr << e.what() << '\n';
-        std::cerr << program; //res;
-        std::abort();
+        std::cerr << program;
+	return -1;
     }
 
     auto ctx_ = rcx::parseStart(std::move(program))();
