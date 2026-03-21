@@ -27,6 +27,37 @@ namespace rcx {
 
 NSRCXBGN
 
+// template <typename T, template<typename...> typename U>
+// struct is_kind_of : std::false_type {};
+
+// template <template<typename...> typename T,
+//     template<typename...> typename U>
+// struct is_kind_of<T, T> : std::true_type {};
+
+// template <typename T, template<typename...> typename U>
+// constexpr bool is_kind_of_v = is_kind_of<T, U>::value;
+
+template <typename T /* FROM */, typename U /* TO */,
+    typename R = std::remove_reference_t<T>>
+struct is_basically : std::is_same<R, U> {};
+
+template <typename T, typename U>
+constexpr bool is_basically_v = is_basically<T, U>::value;
+
+template <typename T, typename... Us>
+T ctr_from(Us... args) noexcept {
+    return T(args...);
+}
+
+template <typename T, typename... Args>
+struct has : std::false_type {};
+
+template <template<typename...> typename V, typename T, typename... Args>
+struct has<T, V<T, Args...>> : std::true_type {};
+
+template <template<typename...> typename V, typename T, typename U, typename... Args>
+struct has<T, V<U, Args...>> : has<T, V<Args...>> {};
+
 namespace {
 
 #define __BRKN_PKG_NULL_STRING "\xd"
@@ -48,7 +79,8 @@ using BrokenPackage = struct __brkn_pkg {
                 t_t&,
                 t_t&&>, t_t>;
 
-        this->cont_ = static_cast<sr_t>(std::forward<T>(sr));
+        // this->cont_ = static_cast<sr_t>(std::forward<T>(sr));
+        this->cont_ = std::forward<sr_t>(sr);
         return *this;
     }
 
@@ -73,41 +105,12 @@ using BrokenPackage = struct __brkn_pkg {
     }
 };
 
-// xand
-
-template <bool, bool>
-struct xand : std::false_type {};
-
-template <>
-struct xand<true, true> : std::true_type {};
-
-template <>
-struct xand<false, false> : std::true_type {};
-
-template <typename T, typename U>
-inline constexpr bool xand_v = xand<T::value, U::value>::value;
-
-// is_variant
-
-template <typename... Args>
-struct is_variant : std::false_type {};
-
-template <typename... Args>
-struct is_variant<std::variant<Args...>> : std::true_type {};
-
-template <typename... Args>
-inline constexpr bool is_variant_v = is_variant<Args...>::value;
-
-template <typename T, typename... Args>
-constexpr auto bind_constructor(Args&&... args) noexcept {
-    // IDK how to std::bind template constructor
-    return [&](Args&&...) -> T { return T(std::forward<Args>(args)...); };
-}
-
 } // ns anon
 
 template <typename T>
 struct _Package {
+    using content_type = T;
+
     std::variant<T, BrokenPackage> package_content_;
 
     template <typename _T>
@@ -119,14 +122,28 @@ struct _Package {
     makeBroken(_T&& err) noexcept {
         static_assert(
             std::disjunction_v<
-                std::is_convertible<_T, llvm::StringRef>,
+                rcx::is_basically<_T, llvm::StringRef>,
+                std::is_constructible<llvm::StringRef, _T>,
                 std::is_convertible<_T, llvm::StringRef>
-            >,  "Parameter _T&& err should be "
+            >,  "Parameter `err` should be "
                 "either llvm::StringRef constructible or convertible"
         );
 
         return _Package<T>(
             BrokenPackage{}.setErrPrtCB(std::forward<_T>(err)));
+    }
+
+    T&& operator*() noexcept {
+        return \
+        std::forward<T>(
+            std::visit([](auto&& arg) -> T&& {
+                using arg_t = typename std::remove_reference_t<decltype(arg)>;
+
+                if constexpr (std::is_same_v<arg_t, T>)
+                    return std::forward<T>(arg);
+
+                return std::move(T{});
+            }, package_content_));
     }
 
     // Package can have Nothing, and since has the callback function,
@@ -137,10 +154,10 @@ struct _Package {
             using arg_t = typename std::remove_reference_t<decltype(arg)>;
 
             if constexpr (std::is_same_v<arg_t, T>)
-                return static_cast<T>(arg);
+                return std::forward<T>(arg);
 
             if constexpr (std::is_same_v<arg_t, BrokenPackage>) {
-                if(llvm::StringRef errMsg = static_cast<BrokenPackage>(arg)();
+                if(llvm::StringRef errMsg = std::forward<BrokenPackage>(arg)();
                 errMsg == __BRKN_PKG_NULL_STRING)
                     spdlog::error("Error while opening package"
                     "; broken package returned error message for nothing.");
@@ -157,6 +174,45 @@ struct _Package {
     }
 
     inline auto operator()(void) noexcept { return this->open(); }
+
+    constexpr bool hasValue() noexcept {
+        return std::visit([](auto&& arg) {
+            using arg_t = std::remove_reference_t<decltype(arg)>;
+
+            if constexpr (std::is_same_v<arg_t, BrokenPackage>)
+                return false;
+            return true;
+        }, package_content_);
+    }
+
+    template <typename _T, typename F,
+        typename O = std::invoke_result_t<F, T>,
+        typename = std::enable_if_t<
+            std::disjunction_v<
+                rcx::is_basically<O, _T>,
+                std::is_constructible<_T, O>,
+                std::is_convertible<O, _T> >> >
+    static
+    _Package<_T>&& transform(_Package<T>&& p, F&& f) noexcept {
+        return std::visit([&f](auto&& arg) -> _Package<_T>&& {
+            using arg_t = std::remove_reference_t<decltype(arg)>;
+
+            if constexpr (std::is_same_v<arg_t, T>)
+                return _Package<_T>{static_cast<_T>(f(std::forward<T>(arg)))};
+
+            return _Package<_T>::makeBroken(std::forward<BrokenPackage>(arg));
+        }, p.package_content_);
+    }
+
+    template <typename _U, typename _T = T>
+    static
+    _Package<_T>&& cast(_Package<_U>&& p) noexcept {
+        return _Package<_U>::template transform<_T>(
+            std::forward<_Package<_U>>(p),
+            [](auto&& ctt) noexcept -> _T&& {
+                return std::forward<_T>(ctt);
+            } );
+    }
 };
 
 // the handling callback function is required.

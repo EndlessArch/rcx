@@ -7,15 +7,46 @@
 
 NSRCXBGN
 namespace variant {
-  
-template <typename T, typename... Args>
-struct has : std::false_type {};
+
+// xand
+
+template <bool, bool>
+struct xand : std::false_type {};
+
+template <>
+struct xand<true, true> : std::true_type {};
+
+template <>
+struct xand<false, false> : std::true_type {};
+
+template <typename T, typename U>
+inline constexpr bool xand_v = xand<T::value, U::value>::value;
+
+// is_variant
+
+template <typename... Args>
+struct is_variant : std::false_type {};
+
+template <typename... Args>
+struct is_variant<std::variant<Args...>> : std::true_type {};
+
+template <typename... Args>
+inline constexpr bool is_variant_v = is_variant<Args...>::value;
 
 template <typename T, typename... Args>
-struct has<T, std::variant<T, Args...>> : std::true_type {};
+constexpr auto bind_constructor(Args&&... args) noexcept {
+    // IDK how to std::bind template constructor
+    return [&](Args&&...) -> T { return T(std::forward<Args>(args)...); };
+}
 
-template <typename T, typename U, typename... Args>
-struct has<T, std::variant<U, Args...>> : has<T, std::variant<Args...>> {};
+// template <typename T, typename... Args>
+// struct has : std::false_type {};
+
+// template <typename T, typename... Args>
+// struct has<T, std::variant<T, Args...>> : std::true_type {};
+
+// template <typename T, typename U, typename... Args>
+// struct has<T, std::variant<U, Args...>> : has<T, std::variant<Args...>> {};
 
 template <typename T, typename V>
 constexpr bool does_variant_have_v = has<T, V>::value;

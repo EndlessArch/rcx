@@ -2,6 +2,7 @@
 #define RCX_CTX_CONTEXT_HPP
 
 #include <initializer_list>
+#include <type_traits>
 #include <utility>
 #include <variant>
 
@@ -30,7 +31,7 @@ using context_t = typename std::variant<SpaceContext, ClassContext, FunctionCont
 
 template <typename T, typename P = SpaceContext>
 class BaseContext {
-    void* parent_;
+    const void* parent_;
     std::vector<context_t> childs_;
 
     BaseContext(void) noexcept
@@ -86,16 +87,29 @@ public:
 
     static
     SpaceContext null() noexcept {
-        auto null = BaseContext<SpaceContext>::null();
-        return SpaceContext(null, "", {});
+        auto base_nil = BaseContext<SpaceContext>::null();
+        return SpaceContext(base_nil, "(null)", {});
     }
 
     SpaceContext() = delete;
     ~SpaceContext() = default;
 
-    template <typename T>
-    SpaceContext(T& parent, const std::string & name, std::initializer_list<defs_t> && il)
-    : BaseContext<SpaceContext>(parent), name_(name), ctx_(std::move(il)) {}
+    template <typename T, typename S,
+        typename _S =
+            std::conditional_t<
+                rcx::is_basically_v<S, char[]>,
+                std::add_rvalue_reference_t<const S>,
+                std::add_const_t<S> // constatly being false
+                >,
+        typename = std::enable_if_t<
+            std::disjunction_v<
+                rcx::is_basically<S, std::string>,
+                std::is_convertible<S, std::string>,
+                std::is_constructible<std::string, S> >> >
+    SpaceContext(T& parent, S && name, std::initializer_list<defs_t> && il)
+    : BaseContext<SpaceContext>(parent)
+    , name_{std::forward<_S>(name)}
+    , ctx_(std::move(il)) {}
 
   //    inline
     auto& setName(const std::string& name) noexcept {

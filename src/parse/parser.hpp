@@ -17,8 +17,13 @@ namespace parser {
 
 enum class Token {
 
+__UNKNOWN,
+__EOF,
+
 // Comment // #
 Digit,
+Integer,
+Float,
 
 Namespace, // namespace
 Identifier,
@@ -27,7 +32,11 @@ Braces, // {}
 Brackets, // []
 Angles, // <>
 
+VRelations, // >= <= ==
+VSet, // =
+
 Comma, // ,
+Scope, // ::
 
 Type, // :
 TypeArrow, // ->
@@ -65,15 +74,45 @@ template <typename F>
 Package<metavars_t>
 parseMetaVars(F&) noexcept;
 
+// template <typename F, template<> class V>
+// Package<V<std::string>>
+// parseVString(F&) noexcept;
+
 } // ns parser
 
-Package<ctx::context_t>
+Package<rcx::ctx::context_t>
 parseStart(argparse::ArgumentParser &&) noexcept;
+
+// template <typename T, typename U>
+// Package<rcx::ctx::context_t>
+// parseFunction(T& readF, U& expectF, ctx::SpaceContext&) noexcept;
+
+// template <typename T, typename U>
+// Package<rcx::ctx::context_t>
+// parseStruct(T& readF, U& expectF, ctx::SpaceContext&) noexcept;
+
+// template <typename T, typename U>
+// Package<rcx::ctx::context_t>
+// parseBinaryFunction(T& readF, U& expectF, ctx::SpaceContext&) noexcept;
+
+// template <typename T, typename U>
+// Package<rcx::ctx::context_t>
+// parseAnnotation(T& readF, U& expectF, ctx::SpaceContext&) noexcept;
+
+// template <typename T, typename U>
+// Package<rcx::ctx::context_t>
+// parseNamespace(T& readF, U& expectF, ctx::SpaceContext&) noexcept;
+
+// template <typename T, typename U>
+// Package<rcx::ctx::context_t>
+// parseGlobal(T& readF, U& expectF, ctx::SpaceContext&) noexcept;
 
 // craft module
 Package<ctx::context_t>
 parseModule(void) noexcept;
 
 NSRCXEND
+
+#include <parse/parser.tpp>
 
 #endif

@@ -46,8 +46,11 @@ auto main(
     }
 
     auto ctx_ = rcx::parseStart(std::move(program))();
-    if(ctx_.has_value())
+    if(ctx_.has_value()) {
         spdlog::info("Package receive successful");
+
+        // ctx_.
+    }
     else
         spdlog::info("Got nothing");
 

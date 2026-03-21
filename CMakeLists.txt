@@ -25,7 +25,7 @@ set(IST_DIR_argparse "${EXT_DIR_argparse}/out")
 include(ExternalProject)
 ExternalProject_Add(argparse_ep
 			PREFIX		${EXT_DIR_argparse}
-			GIT_REPOSITORY	"https://github.com/p-ranav/argparse.git"
+			GIT_REPOSITORY	"git@github.com:p-ranav/argparse.git"
 			GIT_TAG		master
 			INSTALL_DIR 	${IST_DIR_argparse}
 			CMAKE_ARGS
