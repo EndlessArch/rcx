@@ -34,6 +34,8 @@ ExternalProject_Add(argparse_ep
 				-DCMAKE_INSTALL_PREFIX:PATH=${IST_DIR_argparse}
 				-DCMAKE_CXX_STANDARD=17
 				-DCMAKE_CXX_STANDARD_REQUIRED=ON
+        -DARGPARSE_BUILD_TESTS=OFF
+        -DARGPARSE_BUILD_SAMPLES=OFF
 #			DEPENDS	${PROJECT_NAME}
 			STEP_TARGETS build
 			)
@@ -73,6 +75,7 @@ target_link_libraries(
   ${llvm_libs}
   LLVMSupport
 )
+target_compile_options(${PROJECT_NAME} PRIVATE -Wno-comment)
 # target_compile_options(
 #   ${PROJECT_NAME} PRIVATE
 #   "$<IF:$<STREQUAL:${CMAKE_CXX_COMPILER_ID},Clang>,-ferror-limit,-fmax-errors>=1024"

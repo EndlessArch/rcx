@@ -1,6 +1,8 @@
 #ifndef RCX_PARSE_PARSER_HPP
 #define RCX_PARSE_PARSER_HPP
 
+#include <conv/Variantical.hpp>
+
 #include <parse/AST/AST.hpp>
 #include <parse/CTX/Context.hpp>
 
@@ -54,15 +56,15 @@ KeyStruct, // struct
 };
 
 Token
-tokenizeIdf(std::string&) noexcept;
+tokenizeIdf(std::string_view) noexcept;
 
-std::string
+std::string_view
 stringifyTok(Token) noexcept;
 
 using expr_t =
-  decltype(merge_variant_t(
+  decltype(variant::merge_variant_t(
     std::declval<
-      fill_every_case<
+      variant::fill_every_case<
         ast::BOp,
         ast::Function,
         ast::Call /* INSERT */>>(),
@@ -74,13 +76,58 @@ template <typename F>
 Package<metavars_t>
 parseMetaVars(F&) noexcept;
 
-// template <typename F, template<> class V>
-// Package<V<std::string>>
-// parseVString(F&) noexcept;
+class SourceLexer {
+  std::fstream& f_src_;
+  std::string buf_{};
+  unsigned len_{};
+
+  static constexpr char c_comment = '#';
+
+  // bool
+  // matches(const std::pair<Token, std::string>&, const auto&) const noexcept;
+public:
+  explicit SourceLexer(std::fstream& f_src) noexcept
+  : f_src_(f_src) {}
+
+  std::optional<std::pair<Token, std::string>> operator()(const auto& expected) noexcept;
+  std::pair<Token, std::string> operator()() noexcept;
+
+private:
+
+  std::optional<std::string>
+  parseStr(auto& it, auto& str, char chH, char chN) noexcept {
+    if(str.front() == chH) {
+      if(str.length()> 1 && str[1] == chN) {
+        auto a = std::string(it, it+ 1);
+        str = str.substr(2);
+        return a;
+      }
+    }
+
+    return {};
+  }
+
+  template <std::size_t N>
+  std::optional<std::string>
+  parseVStr(auto& it, auto& str, char chH, std::array<char, N> vch) noexcept {
+    if(str.front() != chH)  return {};
+    if(str.length() <= 1) return {};
+
+    for(auto c : vch) {
+      if(c == str[1]) {
+        auto a = std::string(it, it+ 1);
+        str = str.substr(2);
+        return a;
+      }
+    }
+
+    return {};
+  }
+};
 
 } // ns parser
 
-Package<rcx::ctx::context_t>
+Package<rcx::ctx::SpaceContext>
 parseStart(argparse::ArgumentParser &&) noexcept;
 
 // template <typename T, typename U>
@@ -108,7 +155,7 @@ parseStart(argparse::ArgumentParser &&) noexcept;
 // parseGlobal(T& readF, U& expectF, ctx::SpaceContext&) noexcept;
 
 // craft module
-Package<ctx::context_t>
+Package<ctx::SpaceContext>
 parseModule(void) noexcept;
 
 NSRCXEND

@@ -14,6 +14,8 @@
 #include <variant>
 #include <vector>
 
+#include <conv/Compare.hpp>
+
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/Optional.h>
 
@@ -27,27 +29,74 @@ namespace rcx {
 
 NSRCXBGN
 
-// template <typename T, template<typename...> typename U>
-// struct is_kind_of : std::false_type {};
+template <typename... Ts>
+struct candidates;
 
-// template <template<typename...> typename T,
-//     template<typename...> typename U>
-// struct is_kind_of<T, T> : std::true_type {};
+template <template<typename...> typename T, typename U>
+struct is_kind_of : std::false_type {};
 
-// template <typename T, template<typename...> typename U>
-// constexpr bool is_kind_of_v = is_kind_of<T, U>::value;
+template <template<typename...> typename T,
+    typename U>
+struct is_kind_of<T, T<U>> : std::true_type {};
+
+template <template<typename...> typename T, typename U>
+constexpr bool is_kind_of_v = is_kind_of<T, std::remove_cvref_t<U>>::value;
+
+static_assert(is_kind_of_v<std::vector, std::vector<int>>);
+static_assert(is_kind_of_v<std::shared_ptr, std::shared_ptr<std::shared_ptr<std::string>>>);
 
 template <typename T /* FROM */, typename U /* TO */,
-    typename R = std::remove_reference_t<T>>
+    typename R = std::remove_cvref_t<T> >
 struct is_basically : std::is_same<R, U> {};
 
 template <typename T, typename U>
 constexpr bool is_basically_v = is_basically<T, U>::value;
 
+// template <class F1, class F2>
+// struct overloaded : F1, F2 {
+//     overloaded(F1 x, F2 y) : F1(x), F2(y) {}
+
+//     using F1::operator();
+//     using F2::operator();
+// };
+
+// template <class F1, class F2>
+// inline
+// overloaded<F1, F2> overload(F1 f1, F2 f2) noexcept {
+//     return overloaded<F1, F2>(f1, f2);
+// }
+
+// NOTE: the project is using c++20
+template <class... Ts>
+struct overloaded : Ts... { using Ts::operator()...; };
+
+// . <17
+// template<class... Ts>
+// overloaded(Ts...) -> overloaded<Ts...>;
+
 template <typename T, typename... Us>
 T ctr_from(Us... args) noexcept {
     return T(args...);
 }
+
+namespace {
+
+template <typename T>
+struct extract_return_t {};
+
+template <typename R, typename... Args>
+struct extract_return_t<R(Args...)> {
+    using type = R;
+};
+
+} // ns anon, function_return_t
+
+// allows return type inference (without providing arguments type)
+template <auto F>
+using invoke_return_t = typename extract_return_t<decltype(std::function{F})>::type;
+
+// template <typename L>
+// using invokeT_return_t = extract_return_t<decltype(L)>::type; // invoke_return_t<std::declval<L>()>;
 
 template <typename T, typename... Args>
 struct has : std::false_type {};
@@ -60,47 +109,43 @@ struct has<T, V<U, Args...>> : has<T, V<Args...>> {};
 
 namespace {
 
-#define __BRKN_PKG_NULL_STRING "\xd"
+// #define __BRKN_PKG_NULL_STRING "\xd"
 
 using BrokenPackage = struct __brkn_pkg {
-    using callback_t = typename std::function<llvm::StringRef(void)>;
+    using callback_t = typename std::function<std::string(void)>;
 
     // either (error) message or message constructor
-    std::variant<llvm::StringRef, callback_t> cont_;
+    std::variant<std::string, callback_t> cont_;
 
-    template <typename T, typename = std::enable_if_t<std::is_convertible_v<T, llvm::StringRef>>>
+    template <typename T, typename = std::enable_if_t<std::is_convertible_v<T, std::string>>>
     struct __brkn_pkg
     setErrPrtCB(T && sr) noexcept {
-        using t_t = decltype(sr);
-        using sr_t = typename std::conditional_t<
-            std::is_reference_v<t_t>,
-            std::conditional_t< // TODO: is this part necessary?
-                std::is_lvalue_reference_v<t_t>,
-                t_t&,
-                t_t&&>, t_t>;
-
-        // this->cont_ = static_cast<sr_t>(std::forward<T>(sr));
-        this->cont_ = std::forward<sr_t>(sr);
+        // NOTE: StringRef doesn't own characters
+        this->cont_ = std::string{std::forward<T>(sr)};
         return *this;
     }
 
     struct __brkn_pkg
     setErrPrtCB(callback_t && cb) noexcept {
-        this->cont_ = std::move(cb);
+        this->cont_ = std::forward<callback_t>(cb);
         return *this;
     }
 
-    llvm::StringRef operator()(void) noexcept {
-        return std::visit([](auto && rhs) -> llvm::StringRef {
-            using arg_t = typename std::remove_reference_t<decltype(rhs)>;
+    std::string_view operator()(void) noexcept {
+        return std::visit([](auto && rhs) -> std::string_view {
+            using arg_t = typename std::remove_cvref_t<decltype(rhs)>;
 
-            if constexpr (std::is_same_v<arg_t, callback_t>)
-                return static_cast<callback_t>(rhs)();
+            if constexpr (std::is_same_v<arg_t, callback_t>) {
+                // spdlog::debug("1");
+                return std::string_view{std::forward<std::string>(std::invoke(rhs))};
+            }
 
-            if constexpr (std::is_same_v<arg_t, llvm::StringRef>)
-                return static_cast<llvm::StringRef>(rhs);
+            if constexpr (std::is_same_v<arg_t, std::string>) {
+                spdlog::debug("rhs = {}", rhs.data());
+                return static_cast<std::string_view>(rhs);
+            }
 
-            return __BRKN_PKG_NULL_STRING;
+            return std::string_view{};
         }, cont_);
     }
 };
@@ -112,6 +157,9 @@ struct _Package {
     using content_type = T;
 
     std::variant<T, BrokenPackage> package_content_;
+
+    _Package(_Package<T>&) = default;
+    _Package(_Package<T>&&) = default;
 
     template <typename _T>
     _Package(_T && val)
@@ -130,27 +178,26 @@ struct _Package {
         );
 
         return _Package<T>(
-            BrokenPackage{}.setErrPrtCB(std::forward<_T>(err)));
+            BrokenPackage{}.setErrPrtCB<_T>(std::forward<_T>(err)));
     }
 
-    T&& operator*() noexcept {
-        return \
-        std::forward<T>(
-            std::visit([](auto&& arg) -> T&& {
-                using arg_t = typename std::remove_reference_t<decltype(arg)>;
+    T operator*() noexcept {
+        return
+            std::visit([](auto&& arg) -> T {
+                using arg_t = typename std::remove_cvref_t<decltype(arg)>;
 
                 if constexpr (std::is_same_v<arg_t, T>)
                     return std::forward<T>(arg);
 
-                return std::move(T{});
-            }, package_content_));
+                return T{};
+            }, package_content_);
     }
 
     // Package can have Nothing, and since has the callback function,
     // the callback calling could be happened after opening.
-    std::optional<T> open() noexcept {
+    std::optional<T> open()&& noexcept {
         return \
-        std::visit([](auto && arg) -> std::optional<T> {
+        std::visit(/*[](auto && arg) -> std::optional<T> {
             using arg_t = typename std::remove_reference_t<decltype(arg)>;
 
             if constexpr (std::is_same_v<arg_t, T>)
@@ -169,19 +216,32 @@ struct _Package {
             spdlog::error(
             "Failed to open package; package has neither expected content nor error callback:"
             " replacing task by instantly default constructed.");
-            return {};
-        }, this->package_content_);
+            return {};*/
+        overloaded {
+            [](T& arg) -> std::optional<T> { return arg; },
+            [](BrokenPackage& brk) -> std::optional<T> {
+                if(llvm::StringRef errMsg = brk(); errMsg.empty())
+                    spdlog::error("Error while opening package"
+                    "; broken package returned error message for nothing.");
+                // else if(!errMsg.empty()) spdlog::warn(errMsg.str());
+                return {};
+            }
+        }, package_content_);
     }
 
-    inline auto operator()(void) noexcept { return this->open(); }
+    inline std::optional<T> operator()(void)&& noexcept { return std::move(*this).open(); }
 
-    constexpr bool hasValue() noexcept {
+    inline constexpr
+    operator bool(void) const noexcept { return this->hasValue(); }
+
+    constexpr bool hasValue() const noexcept {
         return std::visit([](auto&& arg) {
-            using arg_t = std::remove_reference_t<decltype(arg)>;
+            using arg_t = std::decay_t<decltype(arg)>;
 
-            if constexpr (std::is_same_v<arg_t, BrokenPackage>)
-                return false;
-            return true;
+            // if constexpr (std::is_same_v<arg_t, BrokenPackage>)
+            //     return false;
+
+            return std::is_same_v<arg_t, T>;
         }, package_content_);
     }
 
@@ -193,25 +253,69 @@ struct _Package {
                 std::is_constructible<_T, O>,
                 std::is_convertible<O, _T> >> >
     static
-    _Package<_T>&& transform(_Package<T>&& p, F&& f) noexcept {
-        return std::visit([&f](auto&& arg) -> _Package<_T>&& {
+    _Package<_T> transform(_Package<T>&& p, F&& f) noexcept {
+        return std::visit/*<_Package<_T>>*/(/*[](auto&&f, auto&& arg) -> _Package<_T> {
             using arg_t = std::remove_reference_t<decltype(arg)>;
 
             if constexpr (std::is_same_v<arg_t, T>)
-                return _Package<_T>{static_cast<_T>(f(std::forward<T>(arg)))};
+                return _Package<_T>{f(std::forward<T>(arg))};
+            
+            // what's the point of casting atp?
+            if constexpr (std::is_same_v<arg_t, BrokenPackage>)
+                return _Package<_T>(std::forward<BrokenPackage>(arg));
+                // return _Package<_T>::makeBroken(std::forward<BrokenPackage>(arg));
 
-            return _Package<_T>::makeBroken(std::forward<BrokenPackage>(arg));
-        }, p.package_content_);
+            // static constexpr llvm::StringRef errMsg = "Package::transform: Unexpected argument type";
+            // return _Package<_T>::template makeBroken<const llvm::StringRef>(errMsg);
+            return _Package<_T>::makeBroken("Package::transform: Unexpected argument type");*/
+        overloaded {
+            [&f](T&& t) { return _Package<_T>{f(std::forward<T>(t))}; } ,
+            [&f](BrokenPackage&& brk) { return _Package<_T>(brk); }
+        }, std::move(p.package_content_));
     }
 
     template <typename _U, typename _T = T>
     static
-    _Package<_T>&& cast(_Package<_U>&& p) noexcept {
-        return _Package<_U>::template transform<_T>(
-            std::forward<_Package<_U>>(p),
-            [](auto&& ctt) noexcept -> _T&& {
-                return std::forward<_T>(ctt);
-            } );
+    _Package<_T> cast(_Package<_U>&& p) noexcept {
+        // bool b = std::visit([](auto&& a) {
+        //     if constexpr (rcx::is_basically_v<decltype(a), BrokenPackage>) {
+        //         return true;
+        //     }
+        //     return false;
+        // }, p.package_content_);
+
+        // if (b)
+        //     return _Package<_T>(static_cast<BrokenPackage&>(p.package_content_));
+
+        // return trycast<_U, _T>(std::forward<_U>(p.package_content_));
+
+        return std::visit(overloaded {
+            [](_U&& p) {
+                return _Package<_U>::template transform<_T>(
+                    std::forward<_Package<_U>>(p),
+                    [](auto&& ctt) noexcept -> _T {
+                        return static_cast<_T>(std::forward<_U>(ctt));
+                    });
+            },
+            [](BrokenPackage&& b) {
+                return _Package<_T>(std::move(b));
+            }
+        }, std::move(p.package_content_));
+    }
+
+    std::optional<BrokenPackage>
+    extract() noexcept {
+        if(std::holds_alternative<BrokenPackage>(package_content_))
+            return std::get<BrokenPackage>(std::move(package_content_));
+        return {};
+        // return std::visit(overloaded {
+        //     [](T&&) noexcept -> std::optional<BrokenPackage> {
+        //         return {};
+        //     },
+        //     [](BrokenPackage&& b) noexcept -> std::optional<BrokenPackage> {
+        //         return std::move(b);
+        //     }
+        // }, std::move(package_content_));
     }
 };
 

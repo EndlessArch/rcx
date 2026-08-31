@@ -68,6 +68,14 @@ merge_variant_t(std::variant<As...> l, std::variant<Bs...> r) noexcept
 
 //
 
+// template <typename... Ts>
+// using variantify_t = typename std::variant<Ts...>;
+
+template <template <class...> class C, typename... Ts>
+using variant_apply_class_t = typename std::variant<C<Ts>...>;
+
+//
+
 template <template <class, class> typename T, typename A, typename B>
 constexpr auto fill_every_case_impl() noexcept {
     return std::variant<T<A, B>, T<B, A>>{};

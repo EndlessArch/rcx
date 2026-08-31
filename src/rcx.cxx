@@ -42,7 +42,7 @@ auto main(
     } catch(const std::exception& e) {
         std::cerr << e.what() << '\n';
         std::cerr << program;
-	return -1;
+	    return -1;
     }
 
     auto ctx_ = rcx::parseStart(std::move(program))();

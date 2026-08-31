@@ -30,9 +30,9 @@ NSRCXBGN
 namespace parser {
 
 Token
-tokenizeIdf(std::string& idf) noexcept {
+tokenizeIdf(std::string_view idf) noexcept {
     static
-    const std::unordered_map<std::string, Token> tokMap = {
+    const std::unordered_map<std::string_view, Token> tokMap = {
         { "namespace", Token::Namespace },
         { "(", Token::Parentheses },
         { ")", Token::Parentheses },
@@ -58,10 +58,10 @@ tokenizeIdf(std::string& idf) noexcept {
             ? Token::Digit : Token::Identifier;
 }
 
-std::string
+std::string_view
 stringifyTok(Token tok) noexcept {
     static
-    const std::unordered_map<Token, std::string> nameMap {
+    const std::unordered_map<Token, std::string_view> nameMap {
         { Token::Digit, "Number" },
         { Token::Namespace, "namespace" },
         { Token::Parentheses, "parentheses" },
@@ -84,30 +84,188 @@ stringifyTok(Token tok) noexcept {
     return a == nameMap.end() ? "identifier" : nameMap.at(tok);
 }
 
-template <typename F>
-Package<metavars_t>
-parseMetaVars(F& freader) noexcept {
-    auto [tok, idf] = freader();
-    // empty case
-    if(idf == ">") return Package<metavars_t>(metavars_t{});
+// template <typename F>
+// Package<metavars_t>
+// parseMetaVars(F& freader) noexcept {
+//     auto [tok, idf] = freader();
+//     // empty case
+//     if(idf == ">") return Package<metavars_t>(metavars_t{});
 
-    // auto tok = tokenizeIdf(idf);
+//     // auto tok = tokenizeIdf(idf);
     
-    if(tok != Token::Identifier) {
-        return Package<metavars_t>::makeBroken( (std::string)
-            fmt::format("Expected {}, found {}", stringifyTok(tok), idf));
+//     if(tok != Token::Identifier) {
+//         return Package<metavars_t>::makeBroken( (std::string)
+//             fmt::format("Expected {}, found {}", stringifyTok(tok), idf));
+//     }
+
+//     std::pair<std::string, expr_t*> meta_pair{};
+
+//     return Package<metavars_t>::makeBroken("");
+// }
+ 
+// bool
+// SourceLexer::matches(const std::pair<Token, std::string>& got, const auto& expected) const noexcept {
+//     using expected_t = std::remove_cv_t<std::remove_reference_t<decltype(expected)>>;
+
+//     const auto& [tok, idf] = got;
+//     if constexpr(std::is_same_v<expected_t, Token>) {
+//         return tok == expected;
+//     } else if constexpr(std::is_convertible_v<expected_t, char>) {
+//         return idf.size() == 1 && idf.front() == static_cast<char>(expected);
+//     } else if constexpr(std::is_convertible_v<expected_t, std::string>) {
+//         return idf == std::string{expected};
+//     } else {
+//         return false;
+//     }
+// }
+
+std::optional<std::pair<Token, std::string>>
+SourceLexer::operator()(const auto& expected) noexcept {
+    auto restore_buf = buf_;
+    auto restore_pos = f_src_.tellg();
+    auto got = (*this)();
+
+    if(matchesReadResult(got, expected)) {
+        return got;
     }
 
-    std::pair<std::string, expr_t*> meta_pair{};
+    buf_ = std::move(restore_buf);
+    if(restore_pos != std::streampos(-1)) {
+        f_src_.clear();
+        f_src_.seekg(restore_pos);
+    }
 
-    return Package<metavars_t>::makeBroken("");
+    return {};
+}
+
+std::pair<Token, std::string>
+SourceLexer::operator()() noexcept {
+// BGN:
+    if (buf_.empty()) {
+        if (f_src_.eof()) return { Token::__EOF, "" };
+        std::getline(*reinterpret_cast<std::istream*>(&f_src_), buf_);
+    }
+
+    len_ = buf_.length();
+    auto it = buf_.begin();
+    unsigned cnt = 0;
+
+    while(*(it + cnt) != EOF && llvm::isSpace(*(it + cnt)))
+        if(++cnt == buf_.length()) return operator()(); // goto BGN;
+
+    if(cnt) {
+        buf_ = buf_.substr(cnt); // remove beginning whitespaces
+        it = buf_.begin();
+        // spdlog::debug("BUF: '{}', *it: '{}'", buf_, *it);
+    }
+    if(buf_.empty()) return operator()(); // goto BGN;
+    
+    if(buf_.front() == c_comment) {
+        buf_.clear();
+        return operator()(); // goto BGN;
+    }
+
+    if(*it == '-') cnt = 1;
+    else cnt = 0;
+
+    while(*(it + cnt) != EOF && llvm::isDigit(*(it + cnt))) ++cnt;
+    if('.' == *(it + cnt)) {
+        int cnt2 = cnt;
+        auto a = buf_.substr(0, cnt);
+
+        while(*(it + cnt2) != EOF && llvm::isDigit(*(it + cnt2))) ++cnt2;
+
+        if(cnt == cnt2) {
+            return { Token::Integer, a };
+        }
+
+        auto b = buf_.substr(cnt, cnt2);
+        buf_ = buf_.substr(cnt);
+        auto r = a + '.' + b;
+        return { Token::Float, r };
+    }
+    if(cnt && llvm::isSpace(*(it + cnt))) {
+        auto a = buf_.substr(0, cnt);
+        buf_ = buf_.substr(cnt);
+        return { Token::Integer, a };
+    }
+
+    cnt = 0;
+    while(
+        [](char a) noexcept {
+            return llvm::isAlnum(a) || a == '_';
+        }(*(it + cnt)) ) ++cnt;
+    if(cnt) {
+        auto a = buf_.substr(0, cnt);
+        buf_ = buf_.substr(cnt);
+        if("namespace" == a) return { Token::Namespace, a };
+        if("ret" == a) return { Token::KeyReturn, a };
+        return { Token::Identifier, a };
+    }
+
+    auto parseStr = [this, &it](auto& str, char chHead, auto chNext) -> std::optional<std::string> {
+        // if(str.front() == chHead) {
+        //     if(str.length()> 1 && str[1] == chNext) {
+        //         auto a = std::string(it, it+ 1);
+        //         str = str.substr(2);
+        //         return a;
+        //     }
+        // }
+        // return {};
+        return this->parseStr(it, str, chHead, chNext);
+    };
+
+    auto parseVStr = [this, &it]<std::size_t N>(auto& str, char chHead, std::array<char, N> vch) -> std::optional<std::string> {
+        // if(str.front() != chHead)  return {};
+        // if(str.length() <= 1) return {};
+
+        // for(auto c : vch) {
+        //     if(c == str[1]) {
+        //         auto a = std::string(it, it+ 1);
+        //         str = str.substr(2);
+        //         return a;
+        //     }
+        // }
+
+        // return {};
+        return this->parseVStr(it, str, chHead, vch);
+    };
+
+    if(auto r = parseStr(buf_, '-', '>')) return { Token::TypeArrow, "->" };
+    if(auto r = parseVStr.operator()<2>(buf_, '=', std::array<char, 2>{'>', '='}))
+        return { Token::VRelations, *r };
+    if(auto r = parseStr(buf_, '<', '=')) return { Token::VRelations, "<=" };
+    if(auto r = parseStr(buf_, '>', '=')) return { Token::VRelations, ">=" };
+    if(auto r = parseStr(buf_, ':', ':')) return { Token::Scope, "::" };
+
+    std::string a; a.push_back(buf_.front());
+    buf_ = buf_.substr(1);
+
+    static std::unordered_map<std::string, Token> stot {
+        { "(", Token::Parentheses },
+        { ")", Token::Parentheses },
+        { "{", Token::Braces },
+        { "}", Token::Braces },
+        { "<", Token::Angles },
+        { ">", Token::Angles },
+        { "=", Token::VSet },
+        { ":", Token::Type },
+        { "@", Token::Annotation },
+        { "?", Token::TypeDyn },
+        { ",", Token::Comma }
+    };
+
+    auto tok = stot[a];
+    if(Token::__UNKNOWN != tok) return { tok, a };
+
+    return { Token::__UNKNOWN, a };
 }
 
 } // ns parser
 
 using namespace parser;
 
-Package<ctx::context_t>
+Package<ctx::SpaceContext>
 parseStart(argparse::ArgumentParser && optMap) noexcept {
     ;
 
@@ -122,164 +280,11 @@ parseStart(argparse::ArgumentParser && optMap) noexcept {
         f_out.setArgs(destName, std::ios_base::out);
     }
 
-    auto f_idf = [&f_src]() noexcept -> std::pair<Token, std::string> {
-        static std::string buf;
-        static unsigned len;
-        static constexpr char c_comment = '#';
-BGN:
-        if (buf.empty()) {
-            if (f_src.eof()) return { Token::__EOF, "" };
-            std::getline(*reinterpret_cast<std::istream*>(&f_src), buf);
-        }
-
-        len = buf.length();
-        auto it = buf.begin();
-        unsigned cnt = 0;
-
-        while(*(it + cnt) != EOF && llvm::isSpace(*(it + cnt)))
-            if(++cnt == buf.length()) goto BGN;
-
-        if(cnt) buf = buf.substr(cnt); // remove beginning whitespaces
-
-        // spdlog::debug("nospace: {}", buf);
-        if(buf.empty()) goto BGN;
-        if(buf.front() == c_comment) {
-            buf.clear();
-            goto BGN;
-        }
-
-        if(*it == '-') cnt = 1;
-        else cnt = 0;
-    
-        while(*(it + cnt) != EOF && llvm::isDigit(*(it + cnt))) ++cnt;
-        if('.' == *(it + cnt)) {
-            // possibly float
-            int cnt2 = cnt;
-            auto a = buf.substr(0, cnt);
-
-            while(*(it + cnt2) != EOF && llvm::isDigit(*(it + cnt2))) ++cnt2;
-
-            if(cnt == cnt2) {
-                // or maybe throw error: unexpected '.'
-                return { Token::Integer, a };
-            }
-
-            auto b = buf.substr(cnt, cnt2);
-            buf = buf.substr(cnt);
-            return { Token::Float, a + '.' + b };
-        }
-        if(cnt && llvm::isSpace(*(it + cnt))) {
-            auto a = buf.substr(0, cnt);
-            buf = buf.substr(cnt);
-            return { Token::Integer, a };
-        }
-
-        cnt = 0;
-        while(
-            [](char a) noexcept {
-                return llvm::isAlnum(a) || a == '_';
-            }(*(it + cnt)) ) ++cnt;
-        if(cnt) {
-            // alnum identifier
-            auto a = buf.substr(0, cnt);
-            buf = buf.substr(cnt);
-            if("namespace" == a) return { Token::Namespace, a };
-            return { Token::Identifier, a };
-        }
-
-        auto parseStr = [&it](auto& str, char chHead, auto chNext) -> std::optional<std::string> {
-            if(str.front() == chHead) {
-                if(str.length()> 1 && str[1] == chNext) {
-                    auto a = std::string(it, it+ 1);
-                    str = str.substr(2);
-                    return a;
-                }
-            }
-            return {};
-        };
-
-        auto parseVStr = [&it]<std::size_t N>(auto& str, char chHead, std::array<char, N> vch) -> std::optional<std::string> {
-            if(str.front() != chHead)  return {};
-            if(str.length() <= 1) return {};
-
-            for(auto c : vch) {
-                if(c == str[1]) {
-                    auto a = std::string(it, it+ 1);
-                    str = str.substr(2);
-                    return a;
-                }
-            }
-
-            return {};
-        };
-
-        // special character
-        if(auto r = parseStr(buf, '-', '>')) return { Token::TypeArrow, *r };
-        // if(buf.front() == '-') {
-        //     if(len> 1 && buf.at(1) == '>') {
-        //         auto a = std::string(it, it + 1);
-        //         buf = buf.substr(2);
-        //         return a;
-        //     }
-        // }
-        if(auto r = parseVStr.operator()<2>(buf, '=', {'>', '='})) return { Token::VRelations, *r };
-        // if(buf.front() == '=') {
-        //     if(len > 1) {
-        //         if(auto ch = buf.at(1);
-        //         ch == '>' || ch == '=') {
-        //             auto a = std::string(it, it + 1);
-        //             buf = buf.substr(2);
-        //             return a;
-        //         }
-        //     }
-        // }
-        if(auto r = parseStr(buf, '<', '=')) return { Token::VRelations, *r };
-        // if(buf.front() == '<') {
-        //     if(len> 1 && buf.at(1) == '=') {
-        //         auto  a = std::string(it, it + 1);
-        //         buf = buf.substr(2);
-        //         return a;
-        //     }
-        // }
-        if(auto r = parseStr(buf, '>', '=')) return { Token::VRelations, *r };
-        // if(buf.front() == '>') {
-        //     if(len> 1 && buf.at(1) == '=') {
-        //         auto a = std::string(it, it + 1);
-        //         buf = buf.substr(2);
-        //         return a;
-        //     }
-        // }
-
-        if(auto r = parseStr(buf, ':', ':')) return { Token::Scope, *r };
-
-        std::string a; a.push_back(buf.front());
-        // spdlog::debug("a: {}", a.c_str());
-        buf = buf.substr(1);
-        
-        static std::unordered_map<std::string, Token> stot {
-            { "(", Token::Parentheses },
-            { ")", Token::Parentheses },
-            { "{", Token::Braces },
-            { "}", Token::Braces },
-            { "<", Token::Angles },
-            { ">", Token::Angles },
-            { "=", Token::VSet },
-            { ":", Token::Type },
-            { "@", Token::Annotation },
-            { "?", Token::TypeDyn }
-        };
-
-        // if(auto it = stot.find(a); it != stot.end()) return { it->second, a };
-        
-        auto tok = stot[a];
-        if(Token::__UNKNOWN != tok) return { tok, a };
-        
-        return { Token::Identifier, a };
-    };
+    SourceLexer f_idf{f_src};
 
     // NOTE: identifier does not start with special character.
     auto cur_ctx =
-        ctx::SpaceContext::null().setName("$global_namespace");
+        ctx::SpaceContext().setName("$global_namespace");
 
     using type_t = ast::Type;
     using expr_t = parser::expr_t;
@@ -304,37 +309,43 @@ BGN:
     std::optional<property_t> parse_buf{};
 
     do {
-        static const auto parse_expect
+        // using ivk_rt = std::invoke_result_t<decltype(&SourceLexer::operator()), SourceLexer, const std::string&>;
+        using ivk_rt = std::optional<std::pair<Token, std::string>>;
+        using ivk_rt_vt = typename ivk_rt::value_type;
+
+        auto parse_expect
         = [&f_idf](/*auto& from, */const auto& to) noexcept
-        -> Package<std::invoke_result_t<decltype(f_idf)>> {
+        -> Package<ivk_rt_vt> {
             // using from_t = std::remove_reference_t<decltype(from)>;
             using to_t = std::remove_cv_t<std::remove_reference_t<decltype(to)>>;
 
-            using ret_t = std::invoke_result_t<decltype(f_idf)>;
+            using ret_t = ivk_rt_vt; // std::invoke_result_t<decltype(f_idf)::operator(), std::string>;
             using ret_t0 = ret_t::first_type;  // Token
             using ret_t1 = ret_t::second_type; // string
             static_assert(std::is_same_v<ret_t0, Token>);
             // static_assert(std::is_same_v<ret_t1, from_t>, "`f_idf` should return pair which second element has the same type of `from`");
 
-            auto [tk, idf] = f_idf();
-            // from = idf;
-            if constexpr (std::is_same_v<to_t, Token>) {
-                if(tk != to) {
+            auto got = f_idf(to);
+            if(!got) {
+                if constexpr (std::is_same_v<to_t, Token>) {
                     return Package<ret_t>::makeBroken(
-                        fmt::format("Expected {}, found {}", stringifyTok(to), stringifyTok(tk)));
+                        fmt::format("Expected {}", stringifyTok(to)));
+                }/* else if constexpr (std::is_convertible_v<to_t, char>) {
+                    return Package<ret_t>::makeBroken(
+                        fmt::format("Expected '{}'", static_cast<char>(to)));
+                }*/ else if constexpr (std::is_convertible_v<to_t, std::string>) {
+                    return Package<ret_t>::makeBroken(
+                        fmt::format("Expected '{}'", std::string{to}));
+                } else {
+                    // spdlog::debug(":= {}", got);
+                    return Package<ret_t>::makeBroken("Unexpected expectation type");
                 }
-            } else {
-                // assuming `to` to be string or something
-                // if constexpr (std::is_convertible_v<to_t, from_t>) {
-                //     if constexpr (ctr_from<from_t>(from) != to)
-                //         spdlog::error("Expected \'{}\', found \'{}\'", from, to);
-                // }
             }
-            // return from;
-            return Package<ret_t>(ret_t{tk, idf});
+
+            return Package<ret_t>(std::move(*got));
         };
 
-        static const auto f_expect
+        auto f_expect
         = [&f_idf, expect = parse_expect](const auto& a) noexcept
          -> Package<
                 typename
@@ -366,7 +377,7 @@ BGN:
         auto [ tok, idf ] = f_idf();
         if(idf.empty()) break;
 
-        // there's no known parsed metadata/property to continue.
+        // no known parsed metadata/property to continue.
         if (!parse_buf.has_value()) {
             // function parsing starts with the name
             if(tok == Token::Identifier) {
@@ -385,7 +396,7 @@ BGN:
                 if(!pkg.hasValue()) {
                     ;
                 }
-                auto pkg_op = pkg.open().value();
+                auto pkg_op = std::move(pkg).open().value();
                 auto name = pkg_op.second;
 
                 parse_buf = fn_t({}, fmt::format("({})", name), {}, {}, {});
@@ -445,13 +456,13 @@ BGN:
         }
     } while(1);
 
-    return Package<ctx::context_t>(std::move(cur_ctx));
+    return Package<ctx::SpaceContext>(std::move(cur_ctx));
     // return Package<ctx::context_t>::makeBroken("Failed task.");
 }
 
-Package<ctx::context_t>
+Package<ctx::SpaceContext>
 parseModule(void) noexcept {
-    return Package<ctx::context_t>::makeBroken("Failed to parse module.");
+    return Package<ctx::SpaceContext>::makeBroken("Failed to parse module.");
 }
 
 NSRCXEND
