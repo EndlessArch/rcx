@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-file(GLOB_RECURSE RCX_SOURCE_FILES src/*.cxx)
+file(GLOB_RECURSE RCX_SOURCE_FILES CONFIGURE_DEPENDS src/*.cxx)
 add_executable(${PROJECT_NAME} ${RCX_SOURCE_FILES})
 
 find_package(LLVM 15.0.7 REQUIRED)
@@ -22,39 +22,45 @@ set(SRC_DIR_argparse "${CMAKE_CURRENT_SOURCE_DIR}/subprojects/argparse")
 set(EXT_DIR_argparse "${PROJECT_BINARY_DIR}/external/argparse")
 set(IST_DIR_argparse "${EXT_DIR_argparse}/out")
 
-include(ExternalProject)
-ExternalProject_Add(argparse_ep
-			PREFIX		${EXT_DIR_argparse}
-			GIT_REPOSITORY	"git@github.com:p-ranav/argparse.git"
-			GIT_TAG		master
-			INSTALL_DIR 	${IST_DIR_argparse}
-			CMAKE_ARGS
-				-DCMAKE_C_COMPILER:FILEPATH=${CMAKE_C_COMPILER}
-				-DCMAKE_CXX_COMPILER:FILEPATH=${CMAKE_CXX_COMPILER}
-				-DCMAKE_INSTALL_PREFIX:PATH=${IST_DIR_argparse}
-				-DCMAKE_CXX_STANDARD=17
-				-DCMAKE_CXX_STANDARD_REQUIRED=ON
-        -DARGPARSE_BUILD_TESTS=OFF
-        -DARGPARSE_BUILD_SAMPLES=OFF
-#			DEPENDS	${PROJECT_NAME}
-			STEP_TARGETS build
-			)
+include(FetchContent)
 
-set_property(TARGET argparse_ep PROPERTY CXX_STANDARD 17)
-#set_property(TARGET argparse_ep PROPERTY
-#		    INTERFACE_INCLUDE_DIRECTORIES APPEND "${EXT_DIR_argparse}")
-#set_property(TARGET argparse_ep PROPERTY
-#		    IMPORTED_LOCATION "${IST_DIR_argparse}/${CMAKE_STATIC_LIBRARY_PREFIX}argparse${CMAKE_STATIC_LIBRARY_SUFFIX}")
+FetchContent_Declare(
+  argparse
+  GIT_REPOSITORY https://github.com/p-ranav/argparse.git
+  GIT_TAG v3.0
+  GIT_SHALLOW TRUE
+)
 
-ExternalProject_Get_Property(argparse_ep INSTALL_DIR)
+set(BOOST_INCLUDE_LIBRARIES unordered)
+set(BOOST_ENABLE_CMAKE ON)
 
-#include_directories(${INSTALL_DIR}/include)
-#link_directories(${INSTALL_DIR}/lib)
-set(ARGPARSE_INCLUDE_DIR "${INSTALL_DIR}/include")
-set(ARGPARSE_LIBRARY_DIR "${INSTALL_DIR}/lib")
+FetchContent_Declare(
+  Boost
+  GIT_REPOSITORY https://github.com/boostorg/boost.git
+  GIT_TAG boost-1.87.0
+  GIT_SHALLOW TRUE
+  GIT_PROGRESS TRUE
+  GIT_SUBMODULE_RECURSE FALSE
+  GIT_SUBMODULES
+    tools/cmake
+    libs/unordered
+    libs/assert
+    libs/config
+    libs/container_hash
+    libs/core
+    libs/describe
+    libs/mp11
+    libs/predef
+    libs/static_assert
+    libs/throw_exception
+)
 
-add_dependencies(${PROJECT_NAME} argparse_ep)
+FetchContent_MakeAvailable(argparse)
+FetchContent_MakeAvailable(Boost)
+
+add_dependencies(${PROJECT_NAME} argparse)
 add_dependencies(${PROJECT_NAME} spdlog)
+add_dependencies(${PROJECT_NAME} Boost::unordered)
 add_definitions(${LLVM_DEFINITIONS})
 
 target_include_directories(
@@ -62,7 +68,6 @@ target_include_directories(
   # includes
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${LLVM_INCLUDE_DIR}
-  ${ARGPARSE_INCLUDE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/subprojects/spdlog/include
   )
 target_link_directories(${PROJECT_NAME} PRIVATE ${ARGPARSE_LIBRARY_DIR})
@@ -71,9 +76,11 @@ target_link_directories(${PROJECT_NAME} PRIVATE ${ARGPARSE_LIBRARY_DIR})
 target_link_libraries(
   ${PROJECT_NAME} PRIVATE
   spdlog::spdlog
-#  argparse
+  argparse
   ${llvm_libs}
   LLVMSupport
+
+  Boost::unordered
 )
 target_compile_options(${PROJECT_NAME} PRIVATE -Wno-comment)
 # target_compile_options(
