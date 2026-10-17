@@ -1,6 +1,7 @@
 #include "parser.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -29,55 +30,61 @@ NSRCXBGN
 
 namespace parser {
 
-Token
+EToken
 tokenizeIdf(std::string_view idf) noexcept {
     static
-    const std::unordered_map<std::string_view, Token> tokMap = {
-        { "namespace", Token::Namespace },
-        { "(", Token::Parentheses },
-        { ")", Token::Parentheses },
-        { "{", Token::Braces },
-        { "}", Token::Braces },
-        { "<", Token::Angles },
-        { ">", Token::Angles },
-        { ",", Token::Comma },
-        { ":", Token::Type },
-        { "->", Token::TypeArrow },
-        { "?", Token::TypeDyn },
-        { "@", Token::Annotation },
-        { "|", Token::Or },
-        { "&", Token::And },
-        { "case", Token::KeyCase },
-        { "ret", Token::KeyReturn },
-        { "=>", Token::KeyThen },
-        { "struct", Token::KeyStruct }
+    const std::unordered_map<std::string_view, EToken> tokMap = {
+        { "namespace", EToken::Namespace },
+        { "(", EToken::Parentheses },
+        { ")", EToken::Parentheses },
+        { "{", EToken::Braces },
+        { "}", EToken::Braces },
+        { "<", EToken::Angles },
+        { ">", EToken::Angles },
+        { ",", EToken::Comma },
+        { ":", EToken::Type },
+        { "::", EToken::Scope },
+        { "->", EToken::TypeArrow },
+        { "!", EToken::Not },
+        { "?", EToken::TypeDyn },
+        { "@", EToken::Annotation },
+        { "|", EToken::Or },
+        { "&", EToken::And },
+        { "case", EToken::KeyCase },
+        { "ret", EToken::KeyReturn },
+        { "=>", EToken::KeyThen },
+        { "struct", EToken::KeyStruct }
     };
     auto it = tokMap.find(idf);
     return it != tokMap.end() ? it->second :
         std::all_of(idf.begin(), idf.end(), llvm::isDigit)
-            ? Token::Digit : Token::Identifier;
+            ? EToken::Digit : EToken::Identifier;
 }
 
 std::string_view
-stringifyTok(Token tok) noexcept {
+stringifyTok(EToken tok) noexcept {
     static
-    const std::unordered_map<Token, std::string_view> nameMap {
-        { Token::Digit, "Number" },
-        { Token::Namespace, "namespace" },
-        { Token::Parentheses, "parentheses" },
-        { Token::Braces, "braces" },
-        { Token::Angles, "angle braces" },
-        { Token::Comma, "comma" },
-        { Token::Type, "type" },
-        { Token::TypeArrow, "arrow" },
-        { Token::TypeDyn, "?" },
-        { Token::Annotation, "annotation" },
-        { Token::Or, "or" },
-        { Token::And, "and" },
-        { Token::KeyCase, "keyword case" },
-        { Token::KeyReturn, "keyword return" },
-        { Token::KeyThen, "=>" },
-        { Token::KeyStruct, "structure" }
+    const std::unordered_map<EToken, std::string_view> nameMap {
+        { EToken::Digit, "Number" },
+        { EToken::Namespace, "namespace" },
+        { EToken::Parentheses, "parentheses" },
+        { EToken::Braces, "braces" },
+        { EToken::Angles, "angle braces" },
+        { EToken::Comma, "comma" },
+        { EToken::Type, "type" },
+        { EToken::TypeArrow, "arrow" },
+        { EToken::Scope, "scope" },
+        { EToken::TypeDyn, "?" },
+        { EToken::Annotation, "annotation" },
+        { EToken::Not, "!" },
+        { EToken::Or, "or" },
+        { EToken::And, "and" },
+        { EToken::VSet, "=" },
+        { EToken::VRelations, "comparison operator" },
+        { EToken::KeyCase, "keyword case" },
+        { EToken::KeyReturn, "keyword return" },
+        { EToken::KeyThen, "=>" },
+        { EToken::KeyStruct, "structure" }
     };
     // spdlog::debug("Token: {}", (int)tok);
     auto a = nameMap.find(tok);
@@ -119,30 +126,40 @@ stringifyTok(Token tok) noexcept {
 //     }
 // }
 
-std::optional<std::pair<Token, std::string>>
+// FIX: Not synchronized with read <=> operator()()
+Package<Token, EToken>
 SourceLexer::operator()(const auto& expected) noexcept {
-    auto restore_buf = buf_;
-    auto restore_pos = f_src_.tellg();
+    std::string restore_buf = buf_;
+    setPos();
+
     auto got = (*this)();
 
     if(matchesReadResult(got, expected)) {
+        // setPos();
         return got;
     }
+    else spdlog::debug("NNN");
+
+    spdlog::debug("THIS: '{}': {} {}", got.lexeme, stringifyTok(got.kind), (int)got.kind);
+    // if constexpr (std::is_same_v<std::decay_t<decltype(expected)>, Token>)
+    //     spdlog::debug("WANT: {}", stringifyTok(expected));
 
     buf_ = std::move(restore_buf);
-    if(restore_pos != std::streampos(-1)) {
+    const auto lastPos = getPos();
+    if(lastPos != std::streampos(-1)) {
         f_src_.clear();
-        f_src_.seekg(restore_pos);
+        f_src_.seekg(lastPos);
     }
 
-    return {};
+    return got.kind;
 }
 
-std::pair<Token, std::string>
+Token
 SourceLexer::operator()() noexcept {
 // BGN:
+    // refill buffer
     if (buf_.empty()) {
-        if (f_src_.eof()) return { Token::__EOF, "" };
+        if (f_src_.eof()) return Token { EToken::__EOF, "" };
         std::getline(*reinterpret_cast<std::istream*>(&f_src_), buf_);
     }
 
@@ -150,6 +167,7 @@ SourceLexer::operator()() noexcept {
     auto it = buf_.begin();
     unsigned cnt = 0;
 
+    // filter whitespace
     while(*(it + cnt) != EOF && llvm::isSpace(*(it + cnt)))
         if(++cnt == buf_.length()) return operator()(); // goto BGN;
 
@@ -160,11 +178,13 @@ SourceLexer::operator()() noexcept {
     }
     if(buf_.empty()) return operator()(); // goto BGN;
     
+    // filter comment
     if(buf_.front() == c_comment) {
         buf_.clear();
         return operator()(); // goto BGN;
     }
 
+    // read (-)|digit/float
     if(*it == '-') cnt = 1;
     else cnt = 0;
 
@@ -176,18 +196,23 @@ SourceLexer::operator()() noexcept {
         while(*(it + cnt2) != EOF && llvm::isDigit(*(it + cnt2))) ++cnt2;
 
         if(cnt == cnt2) {
-            return { Token::Integer, a };
+            if(cnt) {
+                buf_ = buf_.substr(cnt);
+                return Token { EToken::Integer, a };
+            }
+            buf_ = buf_.substr(1);
+            return Token { EToken::Identifier, "." }; // '.'
         }
 
         auto b = buf_.substr(cnt, cnt2);
         buf_ = buf_.substr(cnt);
         auto r = a + '.' + b;
-        return { Token::Float, r };
+        return Token { EToken::Float, r };
     }
     if(cnt && llvm::isSpace(*(it + cnt))) {
         auto a = buf_.substr(0, cnt);
         buf_ = buf_.substr(cnt);
-        return { Token::Integer, a };
+        return Token { EToken::Integer, a };
     }
 
     cnt = 0;
@@ -198,9 +223,9 @@ SourceLexer::operator()() noexcept {
     if(cnt) {
         auto a = buf_.substr(0, cnt);
         buf_ = buf_.substr(cnt);
-        if("namespace" == a) return { Token::Namespace, a };
-        if("ret" == a) return { Token::KeyReturn, a };
-        return { Token::Identifier, a };
+        if("namespace" == a) return Token { EToken::Namespace, a };
+        if("ret" == a) return Token { EToken::KeyReturn, a };
+        return Token { EToken::Identifier, a };
     }
 
     auto parseStr = [this, &it](auto& str, char chHead, auto chNext) -> std::optional<std::string> {
@@ -228,37 +253,38 @@ SourceLexer::operator()() noexcept {
         // }
 
         // return {};
-        return this->parseVStr(it, str, chHead, vch);
+        return this->parseVStr<N>(it, str, chHead, vch);
     };
 
-    if(auto r = parseStr(buf_, '-', '>')) return { Token::TypeArrow, "->" };
+    if(auto r = parseStr(buf_, '-', '>')) return Token { EToken::TypeArrow, "->" };
     if(auto r = parseVStr.operator()<2>(buf_, '=', std::array<char, 2>{'>', '='}))
-        return { Token::VRelations, *r };
-    if(auto r = parseStr(buf_, '<', '=')) return { Token::VRelations, "<=" };
-    if(auto r = parseStr(buf_, '>', '=')) return { Token::VRelations, ">=" };
-    if(auto r = parseStr(buf_, ':', ':')) return { Token::Scope, "::" };
+        return Token { EToken::VRelations, *r };
+    if(auto r = parseStr(buf_, '<', '=')) return Token { EToken::VRelations, "<=" };
+    if(auto r = parseStr(buf_, '>', '=')) return Token { EToken::VRelations, ">=" };
+    if(auto r = parseStr(buf_, ':', ':')) return Token { EToken::Scope, "::" };
 
     std::string a; a.push_back(buf_.front());
     buf_ = buf_.substr(1);
 
-    static std::unordered_map<std::string, Token> stot {
-        { "(", Token::Parentheses },
-        { ")", Token::Parentheses },
-        { "{", Token::Braces },
-        { "}", Token::Braces },
-        { "<", Token::Angles },
-        { ">", Token::Angles },
-        { "=", Token::VSet },
-        { ":", Token::Type },
-        { "@", Token::Annotation },
-        { "?", Token::TypeDyn },
-        { ",", Token::Comma }
+    static std::unordered_map<std::string, EToken> stot {
+        { "(", EToken::Parentheses },
+        { ")", EToken::Parentheses },
+        { "{", EToken::Braces },
+        { "}", EToken::Braces },
+        { "<", EToken::Angles },
+        { ">", EToken::Angles },
+        { "=", EToken::VSet },
+        { ":", EToken::Type },
+        { "@", EToken::Annotation },
+        { "?", EToken::TypeDyn },
+        { "!", EToken::Not },
+        { ",", EToken::Comma }
     };
 
     auto tok = stot[a];
-    if(Token::__UNKNOWN != tok) return { tok, a };
+    if(EToken::__UNKNOWN != tok) return Token { tok, a };
 
-    return { Token::__UNKNOWN, a };
+    return Token { EToken::__UNKNOWN, a };
 }
 
 } // ns parser
@@ -310,51 +336,54 @@ parseStart(argparse::ArgumentParser && optMap) noexcept {
 
     do {
         // using ivk_rt = std::invoke_result_t<decltype(&SourceLexer::operator()), SourceLexer, const std::string&>;
-        using ivk_rt = std::optional<std::pair<Token, std::string>>;
-        using ivk_rt_vt = typename ivk_rt::value_type;
+        using ivk_rt = Package<Token, TokenErrC>;
 
         auto parse_expect
         = [&f_idf](/*auto& from, */const auto& to) noexcept
-        -> Package<ivk_rt_vt> {
+        -> ivk_rt {
             // using from_t = std::remove_reference_t<decltype(from)>;
             using to_t = std::remove_cv_t<std::remove_reference_t<decltype(to)>>;
+            using err_value_t = typename ivk_rt::failure_type;
 
-            using ret_t = ivk_rt_vt; // std::invoke_result_t<decltype(f_idf)::operator(), std::string>;
-            using ret_t0 = ret_t::first_type;  // Token
-            using ret_t1 = ret_t::second_type; // string
-            static_assert(std::is_same_v<ret_t0, Token>);
-            // static_assert(std::is_same_v<ret_t1, from_t>, "`f_idf` should return pair which second element has the same type of `from`");
-
-            auto got = f_idf(to);
-            if(!got) {
+            static auto make_error_sv = [&to](const auto& result) noexcept -> std::string {
                 if constexpr (std::is_same_v<to_t, Token>) {
-                    return Package<ret_t>::makeBroken(
-                        fmt::format("Expected {}", stringifyTok(to)));
+                    return fmt::format("Expected {}, found", stringifyTok(static_cast<Token>(to).kind));
+                }
+
+                if constexpr (std::is_same_v<to_t, EToken>) {
+                    return fmt::format("Expected {}, found", stringifyTok(static_cast<EToken>(to)));
                 }/* else if constexpr (std::is_convertible_v<to_t, char>) {
                     return Package<ret_t>::makeBroken(
                         fmt::format("Expected '{}'", static_cast<char>(to)));
                 }*/ else if constexpr (std::is_convertible_v<to_t, std::string>) {
-                    return Package<ret_t>::makeBroken(
-                        fmt::format("Expected '{}'", std::string{to}));
+                    return fmt::format("Expected '{}', found", std::string{to});
                 } else {
                     // spdlog::debug(":= {}", got);
-                    return Package<ret_t>::makeBroken("Unexpected expectation type");
+                    return fmt::format("Unexpected expectation type");
                 }
+            };
+
+            auto got = f_idf(to);
+            auto result = got.getResult();
+
+            if(!result) {
+                auto kind = result.assume_error();
+                auto err_sv = fmt::format("{} '{}'", make_error_sv(result), stringifyTok(kind));
+                return TokenErrC { kind, err_sv };
             }
 
-            return Package<ret_t>(std::move(*got));
+            return std::move(result.assume_value());
         };
 
         auto f_expect
         = [&f_idf, expect = parse_expect](const auto& a) noexcept
-         -> Package<
-                typename
-                std::invoke_result_t<
-                    decltype(parse_expect),
-                    decltype(a) >::content_type > {
+         -> std::invoke_result_t<
+                decltype(parse_expect),
+                decltype(a) >
+        {
             // suppose `a` be Token or char/string
             using out_t = std::invoke_result_t<decltype(parse_expect), decltype(a)>;
-            using cont_t = typename out_t::content_type;
+            using cont_t = typename out_t::success_type;
             // static_assert(std::is_same_v<cont_t, std::pair<Token, std::string>>, "Not same");
 
             using a_nr_t = std::remove_reference_t<decltype(a)>;
@@ -380,35 +409,36 @@ parseStart(argparse::ArgumentParser && optMap) noexcept {
         // no known parsed metadata/property to continue.
         if (!parse_buf.has_value()) {
             // function parsing starts with the name
-            if(tok == Token::Identifier) {
+            if(tok == EToken::Identifier) {
                 parse_buf = fn_t({}, idf, {}, {}, {});
                 continue;
             }
 
-            if(tok == Token::KeyStruct) {
+            if(tok == EToken::KeyStruct) {
                 parse_buf = cls_t({}, "", {}, {}, {});
 		        continue;
             }
 
             // may be case of binary function definition
             if(idf == "(") {
-                auto pkg = f_expect(Token::Identifier);
+                auto pkg = f_expect(EToken::Identifier);
                 if(!pkg.hasValue()) {
-                    ;
+                    return "Expected binary function";
                 }
-                auto pkg_op = std::move(pkg).open().value();
-                auto name = pkg_op.second;
+                BOOST_OUTCOME_TRY(auto pkg_op, pkg.getResult());
+                // auto pkg_op = std::move(pkg).open().value();
+                auto name = pkg_op.lexeme;
 
                 parse_buf = fn_t({}, fmt::format("({})", name), {}, {}, {});
                 continue;
             }
 
-            if(tok == Token::Annotation) {
+            if(tok == EToken::Annotation) {
                 parse_buf = annos_t{};
                 continue;
             }
 
-            if(tok == Token::Namespace) {
+            if(tok == EToken::Namespace) {
                 auto ns_ctx = parseNamespace(f_idf, f_expect, cur_ctx);
 
                 // ctx::SpaceContext a_space(cur_ctx, parse_expect(idf, Token::Identifier), {});
@@ -439,7 +469,7 @@ parseStart(argparse::ArgumentParser && optMap) noexcept {
                     if(idf == "(") {
                         // parse arguments
                     }
-                    if(tok == Token::TypeArrow) {
+                    if(tok == EToken::TypeArrow) {
                         // parse return type
                     }
                     if(idf == "{") {

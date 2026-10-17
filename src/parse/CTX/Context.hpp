@@ -3,11 +3,15 @@
 
 #include "ContextBase.hpp"
 #include <initializer_list>
+#include <iterator>
 #include <memory>
+#include <numeric>
 #include <ranges>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include <conv/Lazy.hpp>
 // #include <conv/Modernizer.hpp>
@@ -22,27 +26,112 @@
 #include <llvm/IR/Module.h>
 
 NSRCXBGN
+
+class LayoutValueExpression;
+class LayoutEntityClass;
+class LayoutEntityFunction;
+
 namespace ctx {
 
+class LocalSpaceContext;
 class SpaceContext;
 class ClassContext;
 class FunctionContext;
 
-class PrimitiveExpression {
+class ExpressionObject {
 public:
-    enum class ExpressionType {
-        Variable,
+    enum class ExpressionObjectType {
+        Void,
+        EntityName,
         ValueInt,
         ValueFloat,
         ValueString
     };
 
-private:
-    ExpressionType exprType_;
-    std::variant<int, float, std::string> value_;
+    struct ScopedName {
+    public:
+    private:
+        std::vector<std::string> scopes_;
+    public:
+        ScopedName(std::string name)
+        : scopes_{name} {}
 
-    PrimitiveExpression(ExpressionType exprType, auto&& value)
-    {}
+        ScopedName(std::vector<std::string>&& scopes)
+        : scopes_{std::move(scopes)} {}
+
+        inline bool isEmpty() const noexcept {
+            return scopes_.empty();
+        }
+
+        inline bool isScoped() const noexcept {
+            return scopes_.size() > 1;
+        }
+
+        std::string name() const noexcept {
+            return scopes_.back();
+        }
+
+        std::string fullname() const noexcept {
+            if(scopes_.empty()) { ; }
+            return std::accumulate(
+                std::next(scopes_.begin()), scopes_.end(), scopes_[0],
+                [](std::string a, const std::string& b) { return a + "::" + b; });
+        }
+    };
+
+    using prim_value_t = std::variant<int, float, std::string>;
+
+private:
+    ExpressionObjectType exprType_;
+    std::variant<ScopedName, prim_value_t> value_;
+
+public:
+    ExpressionObject()
+    : exprType_{ExpressionObjectType::Void}
+    , value_{0} {}
+
+    ExpressionObject(const ExpressionObject& eo)
+    : exprType_{eo.exprType_}
+    , value_{eo.value_} {}
+
+    ExpressionObject(ExpressionObject&& eo)
+    : exprType_{eo.exprType_}
+    , value_{std::move(eo.value_)} {}
+
+    ExpressionObject(std::string name)
+    : exprType_{ExpressionObjectType::EntityName}
+    , value_{ScopedName{std::move(name)}} {}
+
+    ExpressionObject(std::vector<std::string>&& scope)
+    : exprType_{ExpressionObjectType::EntityName}
+    , value_{ScopedName{std::move(scope)}} {}
+
+    ExpressionObject(ExpressionObjectType exprType, auto&& value)
+    : exprType_{exprType}
+    , value_{prim_value_t(std::forward<decltype(value)>(value))} {}
+
+    inline bool isVoid() const noexcept {
+        return exprType_ == ExpressionObjectType::Void;
+    }
+
+    inline bool isEmpty() const noexcept {
+        return isVoid() &&
+            std::visit(overloaded{
+                [](const ScopedName& a) { return a.isEmpty(); },
+                [](auto&&) { return true; }
+            }
+        , value_);
+    }
+
+    inline
+    std::string toString() const noexcept {
+        return std::visit(
+            overloaded{
+                [](const ScopedName& a) noexcept -> std::string { return a.fullname(); },
+                [](auto&&) noexcept -> std::string { return ""; }
+            }
+        , value_);
+    }
 };
 
 class ExpressionContext : public BaseContext<ExpressionContext> {
@@ -55,81 +144,508 @@ public:
      * Return : N/A; Both inappropriate
      */
     enum class ExpressionType {
+        Value,
+        Return,
+
         DefineVariable, // define without value
         InitializeVariable, // define with value
         SetValue,
 
-        ReturnVariable,
-        ReturnValue // on primitive value
+        Refer,
+        CallFunction
+    };
+
+    struct ExpressionEntityBase {
+        const ExpressionType type_;
+
+        ExpressionEntityBase(const ExpressionEntityBase& eb)
+        : type_{eb.type_} {}
+
+        constexpr ExpressionEntityBase(ExpressionType type)
+        : type_{type} {}
+    };
+
+    // Value / Return
+    struct ExpressionEntityDynamic : ExpressionEntityBase {
+        std::unique_ptr<ExpressionContext> expr_;
+
+        ExpressionEntityDynamic(const ExpressionEntityDynamic& eDyn)
+        : ExpressionEntityBase(eDyn)
+        , expr_{std::make_unique<ExpressionContext>(*eDyn.expr_)} {}
+
+        ExpressionEntityDynamic(ExpressionType type, ExpressionContext ec)
+        : ExpressionEntityBase{type}
+        , expr_{std::make_unique<ExpressionContext>(std::move(ec))} {}
+
+        // TODO:
+        inline
+        bool isResultModifyable() const noexcept {
+            return expr_->isResultModifyable();
+        }
+
+        std::string toString() const noexcept {
+            switch(type_) {
+            case ExpressionType::Return:
+                return "[Return]: " + expr_->toString();
+            case ExpressionType::Value:
+                return "[Value]: " + expr_->toString();
+            default:
+                return "(ExpressionEntityDynamic)";
+            }
+        }
+    };
+
+    struct ExpressionOf : ExpressionEntityDynamic {
+        ExpressionObject obj_;
+
+        ExpressionOf(const ExpressionOf& eOf)
+        : ExpressionEntityDynamic{eOf}
+        , obj_{eOf.obj_} {}
+
+        ExpressionOf(ExpressionObject obj, ExpressionContext ec)
+        : ExpressionEntityDynamic{ExpressionType::Value, std::move(ec)}
+        , obj_{std::move(obj)} {}
+
+        inline
+        bool isResultModifyable() const noexcept {
+            return expr_->isResultModifyable();
+        }
+
+        std::string toString() const noexcept {
+            return "[Of]: " + obj_.toString() + "." + expr_->toString();
+        }
+    };
+
+    struct ExpressionOpNegate : ExpressionEntityDynamic {
+        ExpressionOpNegate(const ExpressionOpNegate& op)
+        : ExpressionEntityDynamic{op} {}
+
+        ExpressionOpNegate(ExpressionContext ec)
+        : ExpressionEntityDynamic{ExpressionType::Value, std::move(ec)} {}
+
+        inline
+        bool isResultModifyable() const noexcept {
+            return expr_->isResultModifyable();
+        }
+
+        std::string toString() const noexcept {
+            return "[OpNegate]: " + expr_->toString();
+        }
+    };
+
+    struct ExpressionEntityReturnVoid : ExpressionEntityBase {
+        ExpressionEntityReturnVoid(const ExpressionEntityReturnVoid& e)
+        : ExpressionEntityBase{ExpressionType::Return} {}
+
+        constexpr ExpressionEntityReturnVoid()
+        : ExpressionEntityBase{ExpressionType::Return} {}
+    };
+
+    // Refer
+    struct ExpressionEntity : ExpressionEntityBase {
+        ExpressionObject obj_;
+
+        ExpressionEntity(const ExpressionEntity& ent)
+        : ExpressionEntityBase{ent}
+        , obj_{ent.obj_} {}
+
+        ExpressionEntity(ExpressionType type, ExpressionObject&& eo)
+        : ExpressionEntityBase{type}
+        , obj_{std::move(eo)} {}
+
+        inline
+        bool isReferring() const noexcept {
+            return type_ == ExpressionType::Refer;
+        }
+
+        std::string toString() const noexcept {
+            switch(type_) {
+            case ExpressionType::Refer:
+                return "[Refer]: " + obj_.toString();
+            default:
+                return "(ExpressionEntity)";
+            }
+        }
+    };
+
+    struct ExpressionEntityDefine : ExpressionEntity {
+        using expression_type_t = std::variant<ExpressionObject, ExpressionContext>;
+
+        std::unique_ptr<expression_type_t> eType_;
+        std::unique_ptr<ExpressionContext> value_;
+
+        ExpressionEntityDefine(const ExpressionEntityDefine& eed)
+        : ExpressionEntity{eed}
+        , eType_{std::make_unique<expression_type_t>(*eed.eType_)}
+        , value_{std::make_unique<ExpressionContext>(*eed.value_)} {}
+            
+        ExpressionEntityDefine(ExpressionObject eo, ExpressionContext eType)
+        : ExpressionEntity{ExpressionType::DefineVariable, std::move(eo)}
+        , eType_{std::make_unique<expression_type_t>(std::move(eType))}
+        , value_{} {}
+
+        ExpressionEntityDefine(ExpressionObject eo, ExpressionContext eType, auto&& value)
+        : ExpressionEntity{ExpressionType::InitializeVariable, std::move(eo)}
+        , eType_{std::make_unique<expression_type_t>(std::move(eType))}
+        , value_{std::make_unique<ExpressionContext>(std::forward<decltype(value)>(value))} {}
+
+        std::string toString() const noexcept {
+            auto sObj = obj_.toString();
+            auto sType = std::visit(
+                [](auto&& e) noexcept -> std::string {
+                    return e.toString();
+                }
+            , *eType_);
+
+            if(type_ == ExpressionType::InitializeVariable)
+                return "[InitVariable]: " + sObj + ": <" + sType + "> := " + value_->toString();
+            
+            return "[DefineVariable]: " + sObj + ": <" + sType + ">";
+        }
+    };
+
+    struct ExpressionEntitySet : ExpressionEntity {
+        std::unique_ptr<ExpressionContext> value_;
+
+        ExpressionEntitySet(const ExpressionEntitySet& ees)
+        : ExpressionEntity{ees}
+        , value_{std::make_unique<ExpressionContext>(*ees.value_)} {}
+
+        ExpressionEntitySet(ExpressionObject eo, ExpressionContext value)
+        : ExpressionEntity{ExpressionType::SetValue, std::move(eo)}
+        , value_{std::make_unique<ExpressionContext>(std::move(value))} {}
+
+        inline
+        std::string toString() const noexcept {
+            return "[Set]: " + obj_.toString() + " = " + value_->toString();
+        }
+    };
+
+    struct ExpressionEntityCall : ExpressionEntity {
+        using context_t = ExpressionContext; // std::unique_ptr<ExpressionContext>;
+        std::vector<context_t> args_;
+
+        ExpressionEntityCall(const ExpressionEntityCall& eec) //= default;
+        : ExpressionEntity{eec}
+        , args_{eec.args_} {}
+
+        // void
+        ExpressionEntityCall(ExpressionObject eo)
+        : ExpressionEntity{ExpressionType::CallFunction, std::move(eo)}
+        , args_{} {}
+
+        // ExpressionEntityCall(std::vector<unique_context_t>&& args)
+        // : args_{std::move(args)} {}
+
+        ExpressionEntityCall(ExpressionObject eo, std::vector<context_t> args)
+        : ExpressionEntity{ExpressionType::CallFunction, std::move(eo)}
+        , args_{std::move(args)} {}
+
+        inline
+        bool isResultModifyable() const noexcept {
+            ; // depends on parsing progress
+        }
+
+        std::string toString() const noexcept {
+            return "[Call]: fn " + obj_.toString();
+        }
+    };
+
+    struct ExpressionStatic {
+        using expression_t = std::variant<ExpressionEntity, ExpressionEntityReturnVoid,
+            ExpressionEntityDefine, ExpressionEntitySet, ExpressionEntityCall>;
+        expression_t expr_;
+
+        ExpressionStatic(const ExpressionStatic& st)
+        : expr_(st.expr_) {}
+
+        ExpressionStatic(ExpressionEntity e)
+        : expr_{std::move(e)} {}
+
+        ExpressionStatic(ExpressionEntityReturnVoid e)
+        : expr_{std::move(e)} {}
+
+        ExpressionStatic(ExpressionEntityDefine e)
+        : expr_{std::move(e)} {}
+
+        ExpressionStatic(ExpressionEntitySet e)
+        : expr_{std::move(e)} {}
+
+        ExpressionStatic(ExpressionEntityCall e)
+        : expr_{std::move(e)} {}
+
+        constexpr
+        bool isResultModifyable() const noexcept {
+            return std::visit(overloaded {
+                [](ExpressionEntity e) -> bool {
+                    return e.isReferring();
+                },
+                [](ExpressionEntityReturnVoid) -> bool {
+                    return false; // void is definitely unmodifyable
+                },
+                [](ExpressionEntityDefine d) -> bool {
+                    return false;
+                },
+                [](ExpressionEntitySet s) -> bool {
+                    return true;
+                },
+                [](ExpressionEntityCall c) -> bool {
+                    return c.isResultModifyable();
+                }
+            }, expr_);
+        }
+
+        inline
+        auto getType() const noexcept {
+            return std::visit(
+                overloaded {
+                    [](const ExpressionEntity& e) { return e.type_; },
+                    [](const ExpressionEntityReturnVoid&) { return ExpressionType::Return; },
+                    [](const ExpressionEntityDefine& d) { return d.type_; },
+                    [](const ExpressionEntitySet&) { return ExpressionType::SetValue; },
+                    [](const ExpressionEntityCall&) { return ExpressionType::CallFunction; }
+                }
+            , expr_);
+        }
+
+        std::string toString() const noexcept {
+            return std::visit(
+                overloaded {
+                    [](const ExpressionEntity& e) noexcept -> std::string {
+                        return e.toString();
+                    },
+                    [](const ExpressionEntityReturnVoid&) noexcept -> std::string {
+                        return "[Return]: (void)";
+                    },
+                    [](const ExpressionEntityDefine& d) noexcept -> std::string {
+                        return d.toString();
+                    },
+                    [](const ExpressionEntitySet& s) noexcept -> std::string {
+                        return s.toString();
+                    },
+                    [](const ExpressionEntityCall& c) noexcept -> std::string {
+                        return c.toString();
+                    }
+                }
+            , expr_);
+        }
+    };
+
+    struct ExpressionDynamic {
+        std::variant<ExpressionEntityDynamic, ExpressionOf, ExpressionOpNegate> dExpr_;
+
+        ExpressionDynamic(const ExpressionDynamic& dyn)
+        : dExpr_{dyn.dExpr_} {}
+
+        ExpressionDynamic(ExpressionEntityDynamic dyn)
+        : dExpr_{std::move(dyn)} {}
+
+        ExpressionDynamic(ExpressionOf of)
+        : dExpr_{std::move(of)} {}
+
+        ExpressionDynamic(ExpressionOpNegate neg)
+        : dExpr_{std::move(neg)} {}
+
+        inline constexpr
+        bool isReferring() const noexcept {
+            return std::visit(
+                [](auto&& e) {
+                    return e.isResultModifyable();
+                }
+            , dExpr_);
+        }
+
+        inline
+        auto getType() const noexcept {
+            return std::visit(
+                [](auto&& e) {
+                    return e.type_;
+                }
+            , dExpr_);
+        }
+
+        inline
+        std::string toString() const noexcept {
+            return std::visit(
+                [](auto&& e) {
+                    return e.toString();
+                }
+            , dExpr_);
+        }
     };
 
 private:
-    ExpressionType type_;
-    std::string varName_;
-    std::unique_ptr<ExpressionContext> exprType_;
-    std::unique_ptr<ExpressionContext> exprValue_;
+    std::variant<ExpressionStatic, ExpressionDynamic> entity_;
 
-    static
-    ExpressionContext null() noexcept {
-        return ExpressionContext{};
-    }
+    // static
+    // ExpressionContext null() noexcept {
+    //     return ExpressionContext{};
+    // }
 
 public:
     // ExpressionContext(const ExpressionContext& ec) = delete;
     // ExpressionContext(ExpressionContext&& ec) = delete;
     ~ExpressionContext() = default;
 
-    ExpressionContext()
-    : BaseContext<ExpressionContext>{BaseContext::null()} {}
+    // ExpressionContext()
+    // : BaseContext<ExpressionContext>{BaseContext::null()}
+    // , entity_{}
+    // , comp_{} {}
 
     ExpressionContext(const ExpressionContext& ec)
     : BaseContext<ExpressionContext>{BaseContext::null()}
-    , type_{ec.type_}
-    , varName_{ec.varName_}
-    , exprType_{std::make_unique<ExpressionContext>(*ec.exprType_)}
-    , exprValue_{std::make_unique<ExpressionContext>(*ec.exprValue_)} {}
+    , entity_{ec.entity_}
+    {}
 
     ExpressionContext(ExpressionContext&& ec)
     : BaseContext<ExpressionContext>{BaseContext::null()}
-    , type_{ec.type_}
-    , varName_{ec.varName_}
-    , exprType_{std::move(ec.exprType_)}
-    , exprValue_{std::move(ec.exprValue_)} {}
+    , entity_{std::move(ec.entity_)}
+    {}
 
-    // constructor for define
-    ExpressionContext(std::string varName, ExpressionContext&& type)
+    // dynamic
+    ExpressionContext(ExpressionType type, ExpressionContext expr)
     : BaseContext<ExpressionContext>{BaseContext::null()}
-    , type_{ExpressionType::DefineVariable}
-    , varName_{varName}
-    , exprType_{std::make_unique<ExpressionContext>(std::move(type))}
-    , exprValue_{} {}
+    , entity_{ExpressionDynamic(ExpressionEntityDynamic(type, std::move(expr)))}
+    {}
 
-    ExpressionContext(std::string varName, ExpressionContext&& type, ExpressionContext&& value)
+    ExpressionContext(ExpressionOf e)
     : BaseContext<ExpressionContext>{BaseContext::null()}
-    , type_{ExpressionType::InitializeVariable}
-    , varName_{varName}
-    , exprType_{std::make_unique<ExpressionContext>(std::move(type))}
-    , exprValue_{std::make_unique<ExpressionContext>(std::move(value))} {}
+    , entity_{ExpressionDynamic(std::move(e))} {}    
+
+    ExpressionContext(ExpressionOpNegate e)
+    : BaseContext<ExpressionContext>{BaseContext::null()}
+    , entity_{ExpressionDynamic(std::move(e))} {}    
+
+    ExpressionContext(ExpressionEntity e)
+    : BaseContext<ExpressionContext>{BaseContext::null()}
+    , entity_{ExpressionStatic(std::move(e))} {}
+
+    ExpressionContext(ExpressionEntityReturnVoid e)
+    : BaseContext<ExpressionContext>{BaseContext::null()}
+    , entity_{ExpressionStatic(std::move(e))} {}
+
+    ExpressionContext(ExpressionEntityDefine e)
+    : BaseContext<ExpressionContext>{BaseContext::null()}
+    , entity_{ExpressionStatic(std::move(e))} {}
+
+    ExpressionContext(ExpressionEntitySet e)
+    : BaseContext<ExpressionContext>{BaseContext::null()}
+    , entity_{ExpressionStatic(std::move(e))} {}
+
+    ExpressionContext(ExpressionEntityCall e)
+    : BaseContext<ExpressionContext>{BaseContext::null()}
+    , entity_{ExpressionStatic(std::move(e))} {}
 
 public:
     inline constexpr
-    bool isResultModifyable() noexcept {
-        switch(type_) {
-        case ExpressionType::ReturnValue:
-        case ExpressionType::ReturnVariable:
-            return false;
-        default:;
-        }
-        return true;
+    bool isResultModifyable() const noexcept {
+        return std::visit(
+            overloaded {
+                [](const ExpressionStatic& s) noexcept -> bool {
+                    // ExpressionEntitySet
+                    return s.isResultModifyable();
+                },
+                [](const ExpressionDynamic& d) noexcept -> bool {
+                    // RefVariable
+                    return d.isReferring();
+                }
+            }
+        , entity_);
     }
 
-    static ExpressionContext
-    Set(std::string name, ExpressionContext&& value) noexcept {
-        ExpressionContext ec{};
-        ec.type_ = ExpressionType::SetValue;
-        ec.varName_ = name;
-        ec.exprValue_ = std::make_unique<ExpressionContext>(std::move(value));
-        return ec;
+    inline constexpr
+    bool isReferring() const noexcept {
+        return false; // TODO
+    }
+
+    inline constexpr
+    bool isDynamic() const noexcept {
+        return std::visit(
+            overloaded {
+                [](const ExpressionStatic&) noexcept -> bool {
+                    return false;
+                },
+                [](const ExpressionDynamic&) noexcept -> bool {
+                    return true;
+                }
+            }
+        , entity_);
+    }
+
+    inline
+    auto getEntityType() const noexcept {
+        return std::visit(
+            [](auto&& e) {
+                return std::forward<decltype(e)>(e).getType();
+            }
+        , entity_);
+    }
+
+    std::string toString() const noexcept {
+        return std::visit(
+            [](auto&& e) {
+                return e.toString();
+            }, entity_);
+    }
+};
+
+struct ExpressionContextBuilder {
+    static
+    ExpressionContext buildReturn() noexcept {
+        constexpr ExpressionContext::ExpressionEntityReturnVoid e{};
+
+        return ExpressionContext{ExpressionContext{std::move(e)}};
+    }
+
+    static
+    ExpressionContext buildReturn(ExpressionContext ec) noexcept {
+        constexpr auto type = ExpressionContext::ExpressionType::Return;
+
+        return ExpressionContext{type, std::move(ec)};
+    }
+    
+    static
+    ExpressionContext buildRef(ExpressionObject obj) noexcept {
+        constexpr auto type = ExpressionContext::ExpressionType::Refer;
+
+        ExpressionContext::ExpressionEntity e(type, std::move(obj));
+        return ExpressionContext{std::move(e)};
+    }
+
+    static
+    ExpressionContext buildSet(ExpressionObject obj, ExpressionContext ec) noexcept {
+        ExpressionContext::ExpressionEntitySet s{std::move(obj), std::move(ec)};
+        return ExpressionContext{std::move(s)};
+    }
+
+    static
+    ExpressionContext buildCall(ExpressionObject fn, std::vector<ExpressionContext> args) noexcept {
+        ExpressionContext::ExpressionEntityCall c{std::move(fn), std::move(args)};
+        return ExpressionContext{std::move(c)};
+    }
+
+    static
+    ExpressionContext buildDefine(ExpressionObject obj, ExpressionContext ec) noexcept {
+        ExpressionContext::ExpressionEntityDefine d{std::move(obj), std::move(ec)};
+        return ExpressionContext{std::move(d)};
+    }
+
+    static
+    ExpressionContext buildDefine(ExpressionObject obj, ExpressionContext ec, auto&& value) noexcept {
+        ExpressionContext::ExpressionEntityDefine d{std::move(obj), std::move(ec), std::forward<decltype(value)>(value)};
+        return ExpressionContext{std::move(d)};
+    }
+
+    static
+    ExpressionContext buildOf(ExpressionObject obj, ExpressionContext ec) noexcept {
+        ExpressionContext::ExpressionOf f{std::move(obj), std::move(ec)};
+        return ExpressionContext{std::move(f)};
+    }
+
+    static
+    ExpressionContext buildOpNegate(ExpressionContext ec) noexcept {
+        ExpressionContext::ExpressionOpNegate oNeg{std::move(ec)};
+        return ExpressionContext{std::move(oNeg)};
     }
 };
 
@@ -137,8 +653,11 @@ public:
 class SpaceContext : public BaseContext<SpaceContext> {
 public:
     using defs_t = //typename std::variant<SpaceContext*, ClassContext*, FunctionContext*>; // context_t;
-        typename rcx::variant::variant_apply_class_t<std::shared_ptr,
-            ExpressionContext, SpaceContext, ClassContext, FunctionContext>;
+        typename rcx::variant::variant_apply_class_t<std::shared_ptr
+            , LayoutEntityClass
+            , LayoutEntityFunction
+            , LocalSpaceContext
+            , SpaceContext>;
 
 private:
     std::string name_;
@@ -233,27 +752,42 @@ public:
         }
     }
 
-    inline
-    unsigned dumpDef() const noexcept {
-        if(ctx_.empty()) return 0;
+    unsigned dumpDef() const noexcept;
+};
 
-        unsigned sz = ctx_.size();
-        std::vector<std::string> vDef(sz);
+class LocalSpaceContext : public BaseContext<LocalSpaceContext> {
+    std::string name_;
+    std::vector<std::variant<
+        std::shared_ptr<LayoutValueExpression>,
+        std::shared_ptr<LocalSpaceContext>>> ctx_;
 
-        for(auto& v : ctx_) {
-            vDef.emplace_back(
-                std::visit<std::string>(
-                    overloaded {
-                        [](const std::shared_ptr<ExpressionContext>&) { return "ExpressionContext"; },
-                        [](const std::shared_ptr<SpaceContext>&) { return "SpaceContext"; },
-                        [](const std::shared_ptr<ClassContext>&) { return "ClassContext"; },
-                        [](const std::shared_ptr<FunctionContext>&) { return "FunctionContext"; }
-                    }, v));
-            spdlog::debug("dumpDef: {}", vDef.back());
+    static
+    llvm::Module mod_;
+
+    static
+    SpaceContext null() noexcept {
+        // auto base_nil = BaseContext<SpaceContext>::null();
+        return SpaceContext(std::string_view{"(null)"}, {});
+    }
+public:
+    LocalSpaceContext() : BaseContext<LocalSpaceContext>(BaseContext::null()) {}
+
+    auto& addDef(auto&& rhs) noexcept {
+        if constexpr (std::is_pointer_v<decltype(rhs)>) {
+            return ctx_.emplace_back(std::forward<decltype(rhs)>(rhs));
         }
 
-        return sz;
+        if constexpr (rcx::is_kind_of_v<std::shared_ptr, decltype(rhs)>) {
+            return ctx_.emplace_back(std::forward<decltype(rhs)>(rhs));
+        } else {
+            using rhs_t = std::remove_cvref_t<decltype(rhs)>;
+            std::shared_ptr<rhs_t> shp = std::make_shared<rhs_t>(std::forward<rhs_t>(rhs));
+            ctx_.emplace_back(std::move(shp));
+            return ctx_.back();
+        }
     }
+
+    unsigned dumpDef() const noexcept;
 };
 
 // has annotation, has space (= body)
@@ -323,7 +857,7 @@ class FunctionContext : public PropertyContext<FunctionContext> {
 public:
     template <class... Args>
     using array_t = std::vector<Args...>;
-    using element_t = std::pair<std::string, std::string>;
+    using element_t = std::pair<ExpressionObject, ExpressionContext>;
 
     using arg_t = array_t<element_t>;
     using attr_t = array_t<std::string>;
@@ -331,7 +865,8 @@ public:
 private:
     std::optional<attr_t> attrs_;
     std::string name_;
-    // arg_t args_;
+    ExpressionObject rType_;
+    arg_t args_;
     // std::shared_ptr<SpaceContext> body_;
 
     inline
@@ -357,15 +892,21 @@ public:
     // FunctionContext(parent, anno)
     // : PropertyContext<FunctionContext>{parent, annotation} {}
 
-    FunctionContext(const std::string& name, arg_t&& args,
+    FunctionContext(const std::string& name,
+        ExpressionObject ret_type, arg_t&& args,
         SpaceContext&& body, std::optional<attr_t> attrs = {})
-        : PropertyContext(std::move(*attrs), std::move(body)) {}
+        : PropertyContext(std::move(*attrs), std::move(body))
+        , rType_{std::move(ret_type)} {}
 
     ~FunctionContext() = default;
 
     template <typename T>
     FunctionContext(T& parent, std::vector<std::string>&& il)
     : PropertyContext(parent, std::move(il)) {}
+
+    std::string dumpDef() const noexcept {
+        return name_ + "" + rType_.toString();
+    }
 };
 
 } // ns ctx

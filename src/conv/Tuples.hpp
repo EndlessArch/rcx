@@ -135,7 +135,7 @@ struct has_pair<rcx::candidates<Cs...>, std::pair<T, P>>
 template <typename T, typename P>
 constexpr bool has_pair_v = has_pair<T, P>::value;
 
-static_assert(has_pair_v<rcx::candidates<std::string, char>, std::pair<parser::Token, char>>);
+// static_assert(has_pair_v<rcx::candidates<std::string, char>, std::pair<parser::EToken, char>>);
 
 // // is_pair_N
 // template <typename T, typename P>

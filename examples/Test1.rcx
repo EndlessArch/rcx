@@ -1,6 +1,9 @@
 namespace std {
 
-# ? = compile time dynamic
+# ? = compile time dynamic expression
+# let's change the way
+# grammar much as c/cpp
+# but adding internal inference system
 
 @{anno, compTime}
 silent(expr: ?) -> bool {
@@ -35,12 +38,122 @@ ostream(fd: int, io: io_type) {
 
 main(argc: int, argv: char*[]) -> int 
 {
-  std << "Hello World\n"
+  std << "Hello World" << nl
 
   ret 0
 }
 
-# 2527
-# 5541 ?
-# 7615
-# ?96144 230
+
+/* **
+
+Rule:
+  With Gravity
+  Object at Under
+  should Larger than
+  Object on Above
+
+  ->
+  With Gravity
+  Object on Above
+  'can' be Equal OR Smaller than
+  Object at Under
+
+////
+
+// cpu hates objects
+// it just waits for loading data from memory.
+// what if some language translate but as in architectural way ?
+
+/*
+class D {
+  D() {
+    // constructor
+  }
+
+  void say_hello() {
+    // say hello
+  }
+}
+
+// methods be invoked via instance of class.
+int main() {
+  ...
+  D instance();
+
+  instance.say_hello(); // method invoked
+  ...
+}
+*/
+
+// Is it about translation?
+// OR entire language rule leading to program opposite way from OOP?
+
+// on translation:
+int main() {
+  ...
+  // 1. preserve memory for D
+  // 2. invoke constructor method with pointer of D
+  // 3. invoke method with pointer of D
+  ...
+}
+
+// but considering modern compiler optimization
+// if pointer of D isn't on use, there'd be only invokes without arguments
+
+// class base pointer does not exist, but just data.
+
+template <typename T>
+class optional {
+  bool hasValue;
+  T* data;
+
+  optional() : hasValue(false), data(nullptr) {}
+
+  optional(T t) : hasValue(true) {
+    data = (T*)malloc(sizeof(T));
+    memcpy(data, &t);
+  }
+
+  optional<T>& operator=(void) {
+    hasValue = false;
+    data = nullptr;
+  }
+
+  optional<T>& operator=(T t) {
+    hasValue = true;
+    data = (T*)malloc(sizeof(T));
+    memcpy(data, &t);
+  }
+}
+
+int main() {
+  optional<int> opt_int;
+
+  opt_int = 10;
+  // or
+  opt_int = {};
+
+  ...
+}
+
+// on this case, things could be like..
+int main() {
+  let hasValue: bool
+  let data: int*
+
+  hasValue = false;
+  data = nullptr;
+
+  hasValue = true;
+  data = (int*)malloc(sizeof(int));
+  memcpy(data, &10?);
+
+  // could be sumed up to..
+
+  let hasValue: bool = true
+  let data: 10; int*
+  
+
+}
+
+** */

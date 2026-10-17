@@ -1,6 +1,8 @@
 #ifndef RCX_PARSE_PARSER_HPP
 #define RCX_PARSE_PARSER_HPP
 
+#include <fstream>
+
 #include <conv/Variantical.hpp>
 
 #include <parse/AST/AST.hpp>
@@ -10,14 +12,14 @@
 
 // forward declaration
 namespace argparse {
-  class ArgumentParser;  
+  class ArgumentParser;
 } // ns argparse
 
 NSRCXBGN
 
 namespace parser {
 
-enum class Token {
+enum class EToken {
 
 __UNKNOWN,
 __EOF,
@@ -43,8 +45,9 @@ Scope, // ::
 Type, // :
 TypeArrow, // ->
 TypeDyn, // ?
-Annotation, // @
 
+Annotation, // @
+Not, // !
 Or, // |
 And, // &
 
@@ -55,11 +58,25 @@ KeyStruct, // struct
 
 };
 
-Token
+EToken
 tokenizeIdf(std::string_view) noexcept;
 
 std::string_view
-stringifyTok(Token) noexcept;
+stringifyTok(EToken) noexcept;
+
+struct Token {
+  EToken kind;
+  std::string lexeme;
+
+  ;
+};
+
+struct TokenErrC {
+  Token token;
+  std::string_view error;
+
+  ;
+};
 
 using expr_t =
   decltype(variant::merge_variant_t(
@@ -78,19 +95,19 @@ parseMetaVars(F&) noexcept;
 
 class SourceLexer {
   std::fstream& f_src_;
+  std::streampos f_last_pos_;
   std::string buf_{};
   unsigned len_{};
 
   static constexpr char c_comment = '#';
 
-  // bool
-  // matches(const std::pair<Token, std::string>&, const auto&) const noexcept;
 public:
   explicit SourceLexer(std::fstream& f_src) noexcept
-  : f_src_(f_src) {}
+  : f_src_(f_src)
+  , f_last_pos_{f_src.tellg()} {}
 
-  std::optional<std::pair<Token, std::string>> operator()(const auto& expected) noexcept;
-  std::pair<Token, std::string> operator()() noexcept;
+  Package<Token, EToken> operator()(const auto& expected) noexcept;
+  Token operator()() noexcept;
 
 private:
 
@@ -122,6 +139,14 @@ private:
     }
 
     return {};
+  }
+
+  inline auto getPos() const noexcept {
+    return f_last_pos_;
+  }
+
+  inline void setPos() noexcept {
+    f_last_pos_ = f_src_.tellg();
   }
 };
 

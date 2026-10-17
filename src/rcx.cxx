@@ -1,9 +1,5 @@
 #include <exception>
 #include <iostream>
-#include <memory>
-
-// #include <llvm/ADT/StringMap.h>
-// #include <llvm/ADT/StringRef.h>
 
 #include <argparse/argparse.hpp>
 #include <spdlog/spdlog.h>
@@ -36,7 +32,6 @@ auto main(
     //    program.add_argument("-o",
     //        "path for executable output result", false);
 
-    //    argparse::ArgumentParser::Result res;
     try {
         program.parse_args(argc, (const char **)argv);
     } catch(const std::exception& e) {
@@ -45,7 +40,8 @@ auto main(
 	    return -1;
     }
 
-    auto ctx_ = rcx::parseStart(std::move(program))();
+    auto pkg_ctx_ = rcx::parseStart(std::move(program));
+    auto ctx_ = pkg_ctx_.getResult();
     if(ctx_.has_value()) {
         spdlog::info("Package receive successful");
 

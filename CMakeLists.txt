@@ -31,7 +31,9 @@ FetchContent_Declare(
   GIT_SHALLOW TRUE
 )
 
-set(BOOST_INCLUDE_LIBRARIES unordered)
+# Build only the Boost libraries consumed by this project, plus each library's
+# transitive CMake dependencies.
+set(BOOST_INCLUDE_LIBRARIES outcome unordered)
 set(BOOST_ENABLE_CMAKE ON)
 
 FetchContent_Declare(
@@ -49,10 +51,19 @@ FetchContent_Declare(
     libs/container_hash
     libs/core
     libs/describe
+    libs/exception
+    libs/headers
     libs/mp11
+    libs/outcome
     libs/predef
     libs/static_assert
+    libs/smart_ptr
+    libs/system
     libs/throw_exception
+    libs/tuple
+    libs/type_traits
+    libs/variant2
+    libs/winapi
 )
 
 FetchContent_MakeAvailable(argparse)
@@ -70,7 +81,6 @@ target_include_directories(
   ${LLVM_INCLUDE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/subprojects/spdlog/include
   )
-target_link_directories(${PROJECT_NAME} PRIVATE ${ARGPARSE_LIBRARY_DIR})
 
 # llvm_map_components_to_libnames(llvm_libs support core irreader)
 target_link_libraries(
@@ -80,6 +90,7 @@ target_link_libraries(
   ${llvm_libs}
   LLVMSupport
 
+  Boost::outcome
   Boost::unordered
 )
 target_compile_options(${PROJECT_NAME} PRIVATE -Wno-comment)
